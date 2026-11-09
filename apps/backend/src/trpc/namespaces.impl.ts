@@ -30,6 +30,7 @@ import {
 import { NamespacesSerializer } from "../db/serializers";
 import {
   canMutate,
+  denyMessage,
   isAdmin,
   OWNER_ADMIN_ONLY_MESSAGE,
   resolveOwner,
@@ -270,7 +271,10 @@ export const namespacesImplementations = {
       if (!(await canMutate(existingNamespace.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only delete namespaces you own",
+          message: denyMessage(
+            existingNamespace.user_id,
+            "Access denied: You can only delete namespaces you own",
+          ),
         };
       }
 
@@ -340,7 +344,10 @@ export const namespacesImplementations = {
       if (!(await canMutate(existingNamespace.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only update namespaces you own",
+          message: denyMessage(
+            existingNamespace.user_id,
+            "Access denied: You can only update namespaces you own",
+          ),
         };
       }
 
@@ -478,8 +485,10 @@ export const namespacesImplementations = {
       if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
-          message:
+          message: denyMessage(
+            namespace.user_id,
             "Access denied: You can only update server status for namespaces you own",
+          ),
         };
       }
 
@@ -565,8 +574,10 @@ export const namespacesImplementations = {
       if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
-          message:
+          message: denyMessage(
+            namespace.user_id,
             "Access denied: You can only update tool status for namespaces you own",
+          ),
         };
       }
 
@@ -621,8 +632,10 @@ export const namespacesImplementations = {
       if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
-          message:
+          message: denyMessage(
+            namespace.user_id,
             "Access denied: You can only update tool overrides for namespaces you own",
+          ),
         };
       }
 
@@ -682,7 +695,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can refresh tools)
-      if (!(await canMutate(namespace.user_id, userId))) {
+      if (namespace.user_id && namespace.user_id !== userId) {
         return {
           success: false as const,
           message:

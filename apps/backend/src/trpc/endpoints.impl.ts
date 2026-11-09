@@ -20,6 +20,7 @@ import {
 import { EndpointsSerializer } from "../db/serializers";
 import {
   canMutate,
+  denyMessage,
   OWNER_ADMIN_ONLY_MESSAGE,
   resolveOwner,
 } from "../lib/authz";
@@ -251,7 +252,10 @@ export const endpointsImplementations = {
       if (!(await canMutate(existingEndpoint.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only delete endpoints you own",
+          message: denyMessage(
+            existingEndpoint.user_id,
+            "Access denied: You can only delete endpoints you own",
+          ),
         };
       }
 
@@ -300,7 +304,10 @@ export const endpointsImplementations = {
       if (!(await canMutate(existingEndpoint.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only update endpoints you own",
+          message: denyMessage(
+            existingEndpoint.user_id,
+            "Access denied: You can only update endpoints you own",
+          ),
         };
       }
 

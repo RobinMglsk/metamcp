@@ -22,6 +22,7 @@ import {
 import { McpServersSerializer } from "../db/serializers";
 import {
   canMutate,
+  denyMessage,
   isAdmin,
   OWNER_ADMIN_ONLY_MESSAGE,
   resolveOwner,
@@ -320,7 +321,10 @@ export const mcpServersImplementations = {
       if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only delete servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only delete servers you own",
+          ),
         };
       }
 
@@ -415,7 +419,10 @@ export const mcpServersImplementations = {
       if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only update servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only update servers you own",
+          ),
         };
       }
 

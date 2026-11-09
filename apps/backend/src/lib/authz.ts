@@ -34,6 +34,16 @@ export async function canMutate(
   return ownerId === userId;
 }
 
+/** Message for a denied mutation: explains the admin-only rule for shared resources. */
+export function denyMessage(
+  ownerId: string | null | undefined,
+  fallback: string,
+): string {
+  return ownerId === null || ownerId === undefined
+    ? SHARED_ADMIN_ONLY_MESSAGE
+    : fallback;
+}
+
 export const SHARED_ADMIN_ONLY_MESSAGE =
   "Access denied: only administrators can modify shared (public) resources";
 

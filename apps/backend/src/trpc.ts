@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import type { Request, Response } from "express";
 
 import { auth, type Session, type User } from "./auth";
+import { isAdmin } from "./lib/authz";
 import logger from "./utils/logger";
 
 // Extend the base context with Express request/response and auth data
@@ -65,6 +66,7 @@ export const createContext = async ({
     res,
     user,
     session,
+    isAdmin: async () => (user ? isAdmin(user.id) : false),
   };
 };
 

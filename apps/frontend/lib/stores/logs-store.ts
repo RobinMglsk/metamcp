@@ -17,6 +17,8 @@ interface LogsState {
   startAutoRefresh: () => void;
   stopAutoRefresh: () => void;
   setAutoRefresh: (enabled: boolean) => void;
+  /** Call once the signed-in user is known to be an administrator. */
+  enableForAdmin: () => void;
 }
 
 let refreshInterval: NodeJS.Timeout | null = null;
@@ -24,10 +26,7 @@ let refreshInterval: NodeJS.Timeout | null = null;
 // the stored preference, which may belong to an admin using the same browser).
 let accessDenied = false;
 const isAccessDenied = (error: unknown): boolean =>
-  !!error &&
-  typeof error === "object" &&
-  "message" in error &&
-  String(error.message).includes("Administrator access required");
+  (error as { data?: { code?: string } } | null)?.data?.code === "FORBIDDEN";
 const REFRESH_INTERVAL = 2000; // 2 seconds
 const AUTO_REFRESH_STORAGE_KEY = "metamcp-auto-refresh-enabled";
 
@@ -156,6 +155,13 @@ export const useLogsStore = create<LogsState>()(
       }
       set({ isAutoRefreshing: false });
       setStoredAutoRefreshState(false); // Persist to localStorage
+    },
+
+    enableForAdmin: () => {
+      if (!accessDenied && refreshInterval) return;
+      accessDenied = false;
+      get().fetchLogs();
+      if (getStoredAutoRefreshState()) get().startAutoRefresh();
     },
 
     setAutoRefresh: (enabled: boolean) => {
