@@ -3,6 +3,9 @@ import express from "express";
 
 import logger from "@/utils/logger";
 
+import { isPrivateOrLocalHost } from "../../lib/host-ranges";
+import { DEFAULT_JSON_LIMIT_BYTES } from "../../middleware/body-limits.middleware";
+
 // OAuth 2.0 Authorization Parameters interface
 export interface OAuthParams {
   client_id: string;
@@ -82,19 +85,12 @@ export function validateRedirectUri(
       return false;
     }
 
-    // Prevent localhost/private IPs in production
-    if (process.env.NODE_ENV === "production") {
-      const hostname = parsedUri.hostname.toLowerCase();
-      if (
-        hostname === "localhost" ||
-        hostname === "127.0.0.1" ||
-        hostname === "::1" ||
-        hostname.startsWith("192.168.") ||
-        hostname.startsWith("10.") ||
-        hostname.startsWith("172.")
-      ) {
-        return false;
-      }
+    // Prevent localhost/private/link-local addresses in production
+    if (
+      process.env.NODE_ENV === "production" &&
+      isPrivateOrLocalHost(parsedUri.hostname)
+    ) {
+      return false;
     }
 
     // Check against allowed hosts if provided
@@ -175,7 +171,7 @@ export function jsonParsingMiddleware(
 
   if (needsJsonParsing) {
     return express.json({
-      limit: "100kb",
+      limit: DEFAULT_JSON_LIMIT_BYTES,
       type: "application/json",
     })(req, res, next);
   }
@@ -198,7 +194,7 @@ export function urlencodedParsingMiddleware(
   if (needsUrlencodedParsing) {
     return express.urlencoded({
       extended: true,
-      limit: "100kb",
+      limit: DEFAULT_JSON_LIMIT_BYTES,
     })(req, res, next);
   }
   next();
@@ -259,11 +255,23 @@ class RateLimiter {
 const authEndpointLimiter = new RateLimiter(20, 1 * 60 * 1000); // 20 attempts per 1 minute
 const tokenEndpointLimiter = new RateLimiter(20, 1 * 60 * 1000); // 10 attempts per 1 minute
 
+// Dynamic client registration is unauthenticated: allow far fewer per client.
+// Behind the bundled Next.js proxy without TRUST_PROXY every client looks like
+// loopback and they all share one bucket; that shared bucket gets a much higher
+// ceiling so a single abuser cannot lock everyone out within minutes. Setting
+// TRUST_PROXY (see example.env) restores real per-client limits.
+const registrationEndpointLimiter = new RateLimiter(30, 60 * 60 * 1000); // 30 per hour per client
+const sharedRegistrationLimiter = new RateLimiter(300, 60 * 60 * 1000); // 300 per hour for the shared loopback bucket
+const isLoopbackAddress = (ip: string) =>
+  ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+
 // Clean up rate limiter entries every 10 minutes
 setInterval(
   () => {
     authEndpointLimiter.cleanup();
     tokenEndpointLimiter.cleanup();
+    registrationEndpointLimiter.cleanup();
+    sharedRegistrationLimiter.cleanup();
   },
   10 * 60 * 1000,
 );
@@ -286,6 +294,33 @@ export function rateLimitAuth(
       error: "too_many_requests",
       error_description:
         "Too many authorization attempts. Please try again later.",
+    });
+  }
+
+  next();
+}
+
+/**
+ * Rate limiting middleware for dynamic client registration
+ */
+export function rateLimitRegistration(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  const identifier = req.ip || req.socket?.remoteAddress || "unknown";
+
+  const limiter = isLoopbackAddress(identifier)
+    ? sharedRegistrationLimiter
+    : registrationEndpointLimiter;
+  if (limiter.isRateLimited(identifier)) {
+    logger.info(
+      `[RATE LIMIT] Registration endpoint rate limited for IP: ${identifier}`,
+    );
+    return res.status(429).json({
+      error: "too_many_requests",
+      error_description:
+        "Too many client registrations. Please try again later.",
     });
   }
 

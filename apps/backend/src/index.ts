@@ -15,6 +15,25 @@ import logger from "./utils/logger";
 
 const app = express();
 
+// Which proxies' X-Forwarded-For to believe when deriving the client IP used by
+// the per-IP rate limiters. Default: none (req.ip is the socket peer). The
+// bundled Next.js rewrite proxy does NOT add the real client address, and any
+// X-Forwarded-For it receives is client-controlled, so trusting it by default
+// would let anyone dodge per-IP limits by changing the header. When a reverse
+// proxy such as nginx (which appends the real address) runs in front, set
+// TRUST_PROXY (e.g. "loopback", "1", "10.0.0.0/8") to match that topology.
+const trustProxy = process.env.TRUST_PROXY ?? "false";
+app.set(
+  "trust proxy",
+  trustProxy === "true"
+    ? true
+    : trustProxy === "false"
+      ? false
+      : /^\d+$/.test(trustProxy)
+        ? Number(trustProxy)
+        : trustProxy,
+);
+
 // Global JSON middleware for non-proxy routes: small default limit, larger
 // limit for tRPC only after the session was checked (see body-limits).
 // MCP proxy routes and public endpoints skip parsing to allow raw stream access.
@@ -48,6 +67,14 @@ app.use(async (req, res, next) => {
           headers.set(key, Array.isArray(value) ? value[0] : value);
         }
       });
+
+      // Better Auth derives the client IP (rate limiting, session metadata)
+      // from X-Forwarded-For and would take the left-most, client-controlled
+      // entry. Replace it with the address Express resolved from its trusted
+      // proxies so the header cannot be used to dodge per-IP limits.
+      const clientIp = req.ip ?? req.socket.remoteAddress;
+      if (clientIp) headers.set("x-forwarded-for", clientIp);
+      else headers.delete("x-forwarded-for");
 
       // Create Request object
       const request = new Request(url.toString(), {

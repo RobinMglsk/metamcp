@@ -5,9 +5,14 @@ import logger from "@/utils/logger";
 import { oauthRepository } from "../../db/repositories";
 import { hashClientSecretForStorage } from "../../lib/secret-hash";
 import {
+  isRegistrationEnabled,
+  normalizeClientName,
+  validateRegistrationMetadata,
+} from "./registration-validation";
+import {
   generateSecureClientId,
   generateSecureClientSecret,
-  rateLimitToken,
+  rateLimitRegistration,
   validateRedirectUri,
 } from "./utils";
 
@@ -18,197 +23,218 @@ const registrationRouter = express.Router();
  * Allows clients to dynamically register with the authorization server
  * Implementation follows RFC 7591 with OAuth 2.1 security enhancements
  */
-registrationRouter.post("/oauth/register", rateLimitToken, async (req, res) => {
-  try {
-    // Check if body was parsed correctly
-    if (!req.body || typeof req.body !== "object") {
-      return res.status(400).json({
-        error: "invalid_request",
-        error_description: "Request body is missing or malformed",
-      });
-    }
+registrationRouter.post(
+  "/oauth/register",
+  rateLimitRegistration,
+  async (req, res) => {
+    try {
+      if (!isRegistrationEnabled()) {
+        return res.status(403).json({
+          error: "access_denied",
+          error_description: "Dynamic client registration is disabled",
+        });
+      }
 
-    const {
-      redirect_uris,
-      response_types,
-      grant_types,
-      client_name,
-      client_uri,
-      logo_uri,
-      scope,
-      contacts,
-      tos_uri,
-      policy_uri,
-      token_endpoint_auth_method,
-      software_id,
-      software_version,
-    } = req.body;
+      // Check if body was parsed correctly
+      if (!req.body || typeof req.body !== "object") {
+        return res.status(400).json({
+          error: "invalid_request",
+          error_description: "Request body is missing or malformed",
+        });
+      }
 
-    // Validate required parameters
-    if (
-      !redirect_uris ||
-      !Array.isArray(redirect_uris) ||
-      redirect_uris.length === 0
-    ) {
-      return res.status(400).json({
-        error: "invalid_redirect_uri",
-        error_description:
-          "redirect_uris is required and must be a non-empty array",
-      });
-    }
+      const metadataError = validateRegistrationMetadata(req.body);
+      if (metadataError) {
+        return res.status(400).json({
+          error: "invalid_client_metadata",
+          error_description: metadataError,
+        });
+      }
 
-    // OAuth 2.1 Security: Validate redirect URIs
-    for (const uri of redirect_uris) {
-      if (!validateRedirectUri(uri)) {
+      const {
+        redirect_uris,
+        response_types,
+        grant_types,
+        client_name,
+        client_uri,
+        logo_uri,
+        scope,
+        contacts,
+        tos_uri,
+        policy_uri,
+        token_endpoint_auth_method,
+        software_id,
+        software_version,
+      } = req.body;
+
+      // Validate required parameters
+      if (
+        !redirect_uris ||
+        !Array.isArray(redirect_uris) ||
+        redirect_uris.length === 0
+      ) {
         return res.status(400).json({
           error: "invalid_redirect_uri",
-          error_description: `Invalid redirect URI: ${uri}. Must use secure scheme and valid format.`,
+          error_description:
+            "redirect_uris is required and must be a non-empty array",
         });
       }
-    }
 
-    // OAuth 2.1 Security: Set secure defaults for optional parameters
-    const clientGrantTypes =
-      grant_types && Array.isArray(grant_types)
-        ? grant_types
-        : ["authorization_code"]; // Only authorization_code by default
+      // OAuth 2.1 Security: Validate redirect URIs
+      for (const uri of redirect_uris) {
+        if (!validateRedirectUri(uri)) {
+          return res.status(400).json({
+            error: "invalid_redirect_uri",
+            error_description: `Invalid redirect URI: ${uri}. Must use secure scheme and valid format.`,
+          });
+        }
+      }
 
-    const clientResponseTypes =
-      response_types && Array.isArray(response_types)
-        ? response_types
-        : ["code"];
+      // OAuth 2.1 Security: Set secure defaults for optional parameters
+      const clientGrantTypes =
+        grant_types && Array.isArray(grant_types)
+          ? grant_types
+          : ["authorization_code"]; // Only authorization_code by default
 
-    // OAuth 2.1 Security: Default to PKCE (none auth method)
-    const clientTokenEndpointAuthMethod = token_endpoint_auth_method || "none";
+      const clientResponseTypes =
+        response_types && Array.isArray(response_types)
+          ? response_types
+          : ["code"];
 
-    // Validate grant types and response types consistency
-    const validGrantTypes = [
-      "authorization_code",
-      "refresh_token",
-      "client_credentials",
-    ];
-    const validResponseTypes = ["code"];
-    const validAuthMethods = [
-      "none",
-      "client_secret_post",
-      "client_secret_basic",
-    ];
+      // OAuth 2.1 Security: Default to PKCE (none auth method)
+      const clientTokenEndpointAuthMethod =
+        token_endpoint_auth_method || "none";
 
-    for (const grantType of clientGrantTypes) {
-      if (!validGrantTypes.includes(grantType)) {
+      // Validate grant types and response types consistency
+      const validGrantTypes = [
+        "authorization_code",
+        "refresh_token",
+        "client_credentials",
+      ];
+      const validResponseTypes = ["code"];
+      const validAuthMethods = [
+        "none",
+        "client_secret_post",
+        "client_secret_basic",
+      ];
+
+      for (const grantType of clientGrantTypes) {
+        if (!validGrantTypes.includes(grantType)) {
+          return res.status(400).json({
+            error: "invalid_request",
+            error_description: `Unsupported grant type: ${grantType}`,
+          });
+        }
+      }
+
+      for (const responseType of clientResponseTypes) {
+        if (!validResponseTypes.includes(responseType)) {
+          return res.status(400).json({
+            error: "invalid_request",
+            error_description: `Unsupported response type: ${responseType}`,
+          });
+        }
+      }
+
+      if (!validAuthMethods.includes(clientTokenEndpointAuthMethod)) {
         return res.status(400).json({
           error: "invalid_request",
-          error_description: `Unsupported grant type: ${grantType}`,
+          error_description: `Unsupported token endpoint auth method: ${clientTokenEndpointAuthMethod}`,
         });
       }
-    }
 
-    for (const responseType of clientResponseTypes) {
-      if (!validResponseTypes.includes(responseType)) {
-        return res.status(400).json({
-          error: "invalid_request",
-          error_description: `Unsupported response type: ${responseType}`,
-        });
+      // Generate client credentials
+      const clientId = generateSecureClientId();
+
+      // OAuth 2.1 Security: Generate client secret only if auth method requires it
+      // Recommend PKCE (none) for public clients per OAuth 2.1
+      let clientSecret: string | null = null;
+      if (clientTokenEndpointAuthMethod !== "none") {
+        clientSecret = generateSecureClientSecret();
       }
-    }
 
-    if (!validAuthMethods.includes(clientTokenEndpointAuthMethod)) {
-      return res.status(400).json({
-        error: "invalid_request",
-        error_description: `Unsupported token endpoint auth method: ${clientTokenEndpointAuthMethod}`,
+      // Create client registration
+      const clientRegistration = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        client_name: normalizeClientName(client_name),
+        redirect_uris: redirect_uris,
+        grant_types: clientGrantTypes,
+        response_types: clientResponseTypes,
+        token_endpoint_auth_method: clientTokenEndpointAuthMethod,
+        scope: scope || "admin",
+        client_uri: client_uri || null,
+        logo_uri: logo_uri || null,
+        contacts: contacts && Array.isArray(contacts) ? contacts : null,
+        tos_uri: tos_uri || null,
+        policy_uri: policy_uri || null,
+        software_id: software_id || null,
+        software_version: software_version || null,
+        created_at: new Date(),
+      };
+
+      // Store the client registration
+      // Only a hash of the secret is stored; the plaintext is returned once below
+      await oauthRepository.upsertClient({
+        ...clientRegistration,
+        client_secret: clientSecret
+          ? hashClientSecretForStorage(clientSecret)
+          : null,
+      });
+
+      // Prepare response according to RFC 7591 with OAuth 2.1 guidance
+      const baseUrl = req.protocol + "://" + req.get("host");
+      const response: Record<string, unknown> = {
+        client_id: clientId,
+        client_name: clientRegistration.client_name,
+        redirect_uris: clientRegistration.redirect_uris,
+        grant_types: clientRegistration.grant_types,
+        response_types: clientRegistration.response_types,
+        token_endpoint_auth_method:
+          clientRegistration.token_endpoint_auth_method,
+        scope: clientRegistration.scope,
+
+        // OAuth 2.1 Security Information
+        oauth_compliance: "OAuth 2.1",
+        pkce_required: true,
+        pkce_methods_supported: ["S256"],
+
+        // Endpoint information for the client
+        authorization_endpoint: `${baseUrl}/oauth/authorize`,
+        token_endpoint: `${baseUrl}/oauth/token`,
+        userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+        revocation_endpoint: `${baseUrl}/oauth/revoke`,
+      };
+
+      // Include client_secret only if one was generated
+      if (clientSecret) {
+        response.client_secret = clientSecret;
+        response.security_note =
+          "Store client_secret securely. For public clients, use PKCE instead.";
+      } else {
+        response.security_note =
+          "This client uses PKCE for security. Ensure code_challenge and code_challenge_method are included in authorization requests.";
+      }
+
+      // Include optional metadata if provided
+      if (client_uri) response.client_uri = client_uri;
+      if (logo_uri) response.logo_uri = logo_uri;
+      if (contacts) response.contacts = contacts;
+      if (tos_uri) response.tos_uri = tos_uri;
+      if (policy_uri) response.policy_uri = policy_uri;
+      if (software_id) response.software_id = software_id;
+      if (software_version) response.software_version = software_version;
+
+      res.status(201).json(response);
+    } catch (error) {
+      logger.error("Error in OAuth registration endpoint:", error);
+      res.status(500).json({
+        error: "server_error",
+        error_description: "Internal server error during client registration",
       });
     }
-
-    // Generate client credentials
-    const clientId = generateSecureClientId();
-
-    // OAuth 2.1 Security: Generate client secret only if auth method requires it
-    // Recommend PKCE (none) for public clients per OAuth 2.1
-    let clientSecret: string | null = null;
-    if (clientTokenEndpointAuthMethod !== "none") {
-      clientSecret = generateSecureClientSecret();
-    }
-
-    // Create client registration
-    const clientRegistration = {
-      client_id: clientId,
-      client_secret: clientSecret,
-      client_name: client_name || "Unnamed MCP Client",
-      redirect_uris: redirect_uris,
-      grant_types: clientGrantTypes,
-      response_types: clientResponseTypes,
-      token_endpoint_auth_method: clientTokenEndpointAuthMethod,
-      scope: scope || "admin",
-      client_uri: client_uri || null,
-      logo_uri: logo_uri || null,
-      contacts: contacts && Array.isArray(contacts) ? contacts : null,
-      tos_uri: tos_uri || null,
-      policy_uri: policy_uri || null,
-      software_id: software_id || null,
-      software_version: software_version || null,
-      created_at: new Date(),
-    };
-
-    // Store the client registration
-    // Only a hash of the secret is stored; the plaintext is returned once below
-    await oauthRepository.upsertClient({
-      ...clientRegistration,
-      client_secret: clientSecret
-        ? hashClientSecretForStorage(clientSecret)
-        : null,
-    });
-
-    // Prepare response according to RFC 7591 with OAuth 2.1 guidance
-    const baseUrl = req.protocol + "://" + req.get("host");
-    const response: Record<string, unknown> = {
-      client_id: clientId,
-      client_name: clientRegistration.client_name,
-      redirect_uris: clientRegistration.redirect_uris,
-      grant_types: clientRegistration.grant_types,
-      response_types: clientRegistration.response_types,
-      token_endpoint_auth_method: clientRegistration.token_endpoint_auth_method,
-      scope: clientRegistration.scope,
-
-      // OAuth 2.1 Security Information
-      oauth_compliance: "OAuth 2.1",
-      pkce_required: true,
-      pkce_methods_supported: ["S256"],
-
-      // Endpoint information for the client
-      authorization_endpoint: `${baseUrl}/oauth/authorize`,
-      token_endpoint: `${baseUrl}/oauth/token`,
-      userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
-      revocation_endpoint: `${baseUrl}/oauth/revoke`,
-    };
-
-    // Include client_secret only if one was generated
-    if (clientSecret) {
-      response.client_secret = clientSecret;
-      response.security_note =
-        "Store client_secret securely. For public clients, use PKCE instead.";
-    } else {
-      response.security_note =
-        "This client uses PKCE for security. Ensure code_challenge and code_challenge_method are included in authorization requests.";
-    }
-
-    // Include optional metadata if provided
-    if (client_uri) response.client_uri = client_uri;
-    if (logo_uri) response.logo_uri = logo_uri;
-    if (contacts) response.contacts = contacts;
-    if (tos_uri) response.tos_uri = tos_uri;
-    if (policy_uri) response.policy_uri = policy_uri;
-    if (software_id) response.software_id = software_id;
-    if (software_version) response.software_version = software_version;
-
-    res.status(201).json(response);
-  } catch (error) {
-    logger.error("Error in OAuth registration endpoint:", error);
-    res.status(500).json({
-      error: "server_error",
-      error_description: "Internal server error during client registration",
-    });
-  }
-});
+  },
+);
 
 /**
  * OAuth 2.0 Dynamic Client Registration Information Endpoint
