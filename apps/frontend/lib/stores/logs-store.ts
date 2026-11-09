@@ -17,9 +17,16 @@ interface LogsState {
   startAutoRefresh: () => void;
   stopAutoRefresh: () => void;
   setAutoRefresh: (enabled: boolean) => void;
+  /** Call once the signed-in user is known to be an administrator. */
+  enableForAdmin: () => void;
 }
 
 let refreshInterval: NodeJS.Timeout | null = null;
+// Logs are admin-only; once the server says so, stop polling (without touching
+// the stored preference, which may belong to an admin using the same browser).
+let accessDenied = false;
+const isAccessDenied = (error: unknown): boolean =>
+  (error as { data?: { code?: string } } | null)?.data?.code === "FORBIDDEN";
 const REFRESH_INTERVAL = 2000; // 2 seconds
 const AUTO_REFRESH_STORAGE_KEY = "metamcp-auto-refresh-enabled";
 
@@ -64,8 +71,18 @@ export const useLogsStore = create<LogsState>()(
           });
         }
       } catch (error) {
-        console.error("Failed to fetch logs:", error);
         set({ isLoading: false });
+
+        if (isAccessDenied(error)) {
+          accessDenied = true;
+          if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+          }
+          set({ isAutoRefreshing: false });
+          return;
+        }
+        console.error("Failed to fetch logs:", error);
 
         // Check if it's an authentication error
         if (error && typeof error === "object" && "message" in error) {
@@ -114,7 +131,7 @@ export const useLogsStore = create<LogsState>()(
 
     startAutoRefresh: () => {
       const state = get();
-      if (refreshInterval) return; // Already running
+      if (refreshInterval || accessDenied) return; // Already running / not allowed
 
       // Fetch immediately
       state.fetchLogs();
@@ -140,6 +157,13 @@ export const useLogsStore = create<LogsState>()(
       setStoredAutoRefreshState(false); // Persist to localStorage
     },
 
+    enableForAdmin: () => {
+      if (!accessDenied && refreshInterval) return;
+      accessDenied = false;
+      get().fetchLogs();
+      if (getStoredAutoRefreshState()) get().startAutoRefresh();
+    },
+
     setAutoRefresh: (enabled: boolean) => {
       if (enabled) {
         get().startAutoRefresh();
@@ -153,13 +177,12 @@ export const useLogsStore = create<LogsState>()(
 // Initialize auto-refresh based on stored preference
 if (typeof window !== "undefined") {
   // Only start in browser environment and if user previously enabled it
-  setTimeout(() => {
-    const shouldAutoRefresh = getStoredAutoRefreshState();
-    if (shouldAutoRefresh) {
+  setTimeout(async () => {
+    // Fetch once first: non-admins are denied here and must not start polling
+    await useLogsStore.getState().fetchLogs();
+    if (getStoredAutoRefreshState()) {
       useLogsStore.getState().startAutoRefresh();
     }
-    // Always fetch logs once when the page loads
-    useLogsStore.getState().fetchLogs();
   }, 100);
 }
 

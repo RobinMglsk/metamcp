@@ -6,6 +6,11 @@ export interface BaseContext {
   // Using generic types so backends can use their own User/Session types
   user?: any;
   session?: any;
+  /**
+   * Looks the caller's role up at the source of truth (the database) rather
+   * than trusting the session payload; provided by the backend context.
+   */
+  isAdmin?: () => Promise<boolean>;
 }
 
 // Initialize tRPC with base context
@@ -34,4 +39,15 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
       session: ctx.session,
     },
   });
+});
+
+// Requires a logged-in user with the "admin" role (global settings, logs, ...)
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  if (!(await ctx.isAdmin?.())) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Administrator access required",
+    });
+  }
+  return next({ ctx });
 });
