@@ -148,10 +148,10 @@
     "shttpUrlCopied": "Streamable HTTP URL copied to clipboard",
     "openApiUrlCopied": "OpenAPI URL copied to clipboard",
     "openApiSchemaUrlCopied": "OpenAPI Schema URL copied to clipboard",
-    "sseUrlWithApiKeyCopied": "SSE URL with API key parameter copied to clipboard",
-    "shttpUrlWithApiKeyCopied": "SHTTP URL with API key parameter copied to clipboard",
-    "openApiUrlWithApiKeyCopied": "OpenAPI URL with API key parameter copied to clipboard",
-    "openApiSchemaUrlWithApiKeyCopied": "OpenAPI Schema URL with API key parameter copied to clipboard",
+    "sseUrlWithApiKeyCopied": "SSE URL with API key parameter copied to clipboard. Replace YOUR_API_KEY with your API key.",
+    "shttpUrlWithApiKeyCopied": "SHTTP URL with API key parameter copied to clipboard. Replace YOUR_API_KEY with your API key.",
+    "openApiUrlWithApiKeyCopied": "OpenAPI URL with API key parameter copied to clipboard. Replace YOUR_API_KEY with your API key.",
+    "openApiSchemaUrlWithApiKeyCopied": "OpenAPI Schema URL with API key parameter copied to clipboard. Replace YOUR_API_KEY with your API key.",
     "noResults": "No results."
   }
 }

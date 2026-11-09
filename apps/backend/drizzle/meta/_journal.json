@@ -141,6 +141,13 @@
       "when": 1794231406065,
       "tag": "0019_user_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794239604129,
+      "tag": "0020_hash_api_keys",
+      "breakpoints": true
     }
   ]
 }

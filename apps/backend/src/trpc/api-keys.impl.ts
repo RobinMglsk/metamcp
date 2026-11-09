@@ -15,6 +15,11 @@ import logger from "@/utils/logger";
 
 import { ApiKeysRepository } from "../db/repositories";
 import { ApiKeysSerializer } from "../db/serializers";
+import { isAdmin } from "../lib/authz";
+import {
+  isReservedKeyName,
+  RESERVED_KEY_NAME_MESSAGE,
+} from "../lib/reserved-key-names";
 
 const apiKeysRepository = new ApiKeysRepository();
 
@@ -24,6 +29,9 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof CreateApiKeyResponseSchema>> => {
     try {
+      if (isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
       // Use input.user_id if provided, otherwise default to current user (private)
       const apiKeyUserId = input.user_id !== undefined ? input.user_id : userId;
 
@@ -48,8 +56,17 @@ export const apiKeysImplementations = {
     try {
       const apiKeys = await apiKeysRepository.findAccessibleToUser(userId);
 
+      // Shared (user_id = null) keys are usable by everyone but their secret is
+      // only shown to administrators.
+      const viewerIsAdmin = await isAdmin(userId);
+      const visible = apiKeys.map((k) =>
+        k.user_id === null && !viewerIsAdmin
+          ? { ...k, key: `${k.key.slice(0, 12)}…` }
+          : k,
+      );
+
       return {
-        apiKeys: ApiKeysSerializer.serializeApiKeyList(apiKeys),
+        apiKeys: ApiKeysSerializer.serializeApiKeyList(visible),
       };
     } catch (error) {
       logger.error("Error fetching API keys:", error);
@@ -62,10 +79,15 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof UpdateApiKeyResponseSchema>> => {
     try {
-      const result = await apiKeysRepository.update(input.uuid, userId, {
-        name: input.name,
-        is_active: input.is_active,
-      });
+      if (input.name && isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
+      const result = await apiKeysRepository.update(
+        input.uuid,
+        userId,
+        { name: input.name, is_active: input.is_active },
+        await isAdmin(userId),
+      );
 
       return ApiKeysSerializer.serializeApiKey(result);
     } catch (error) {
@@ -81,7 +103,7 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof DeleteApiKeyResponseSchema>> => {
     try {
-      await apiKeysRepository.delete(input.uuid, userId);
+      await apiKeysRepository.delete(input.uuid, userId, await isAdmin(userId));
 
       return {
         success: true,

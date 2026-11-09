@@ -23,6 +23,31 @@ export const STDIO_ADMIN_ONLY_MESSAGE =
   "Access denied: only administrators can create or modify STDIO (command-based) MCP servers";
 
 /**
+ * Shared (user_id = null) resources may only be modified by administrators;
+ * private resources only by their owner.
+ */
+export async function canMutate(
+  ownerId: string | null | undefined,
+  userId: string,
+): Promise<boolean> {
+  if (ownerId === null || ownerId === undefined) return isAdmin(userId);
+  return ownerId === userId;
+}
+
+/** Message for a denied mutation: explains the admin-only rule for shared resources. */
+export function denyMessage(
+  ownerId: string | null | undefined,
+  fallback: string,
+): string {
+  return ownerId === null || ownerId === undefined
+    ? SHARED_ADMIN_ONLY_MESSAGE
+    : fallback;
+}
+
+export const SHARED_ADMIN_ONLY_MESSAGE =
+  "Access denied: only administrators can modify shared (public) resources";
+
+/**
  * Outbound (SSRF) policy for URLs a user asks the server to contact.
  * Administrators may target internal/private addresses (that is how internal
  * MCP servers are reached); other users may not, unless the deployment opts in

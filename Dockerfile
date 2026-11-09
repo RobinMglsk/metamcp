@@ -59,6 +59,11 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.title="MetaMCP"
 LABEL org.opencontainers.image.vendor="metatool-ai"
 
+# The production image runs in production mode: the stricter redirect_uri checks,
+# the startup guard for placeholder secrets and Better Auth's default rate limiting
+# only apply with NODE_ENV=production (an .env file can still override it).
+ENV NODE_ENV=production
+
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl postgresql-client && apt-get clean && rm -rf /var/lib/apt/lists/*
 

@@ -1,7 +1,12 @@
 import express from "express";
 
 import { auth } from "./auth";
+import { hasValidSession } from "./lib/session-check";
 import { initializeIdleServers, initializeOnStartup } from "./lib/startup";
+import {
+  createJsonBodyParser,
+  resolveTrpcLimit,
+} from "./middleware/body-limits.middleware";
 import mcpProxyRouter from "./routers/mcp-proxy";
 import oauthRouter from "./routers/oauth";
 import publicEndpointsRouter from "./routers/public-metamcp";
@@ -29,15 +34,15 @@ app.set(
         : trustProxy,
 );
 
-// Global JSON middleware for non-proxy routes
-app.use((req, res, next) => {
-  if (req.path.startsWith("/mcp-proxy/") || req.path.startsWith("/metamcp/")) {
-    // Skip JSON parsing for all MCP proxy routes and public endpoints to allow raw stream access
-    next();
-  } else {
-    express.json({ limit: "50mb" })(req, res, next);
-  }
-});
+// Global JSON middleware for non-proxy routes: small default limit, larger
+// limit for tRPC only after the session was checked (see body-limits).
+// MCP proxy routes and public endpoints skip parsing to allow raw stream access.
+app.use(
+  createJsonBodyParser({
+    hasValidSession,
+    trpcLimitBytes: resolveTrpcLimit(process.env.MAX_TRPC_BODY_BYTES),
+  }),
+);
 
 // Mount OAuth metadata endpoints at root level for .well-known discovery
 app.use(oauthRouter);
@@ -67,8 +72,9 @@ app.use(async (req, res, next) => {
       // from X-Forwarded-For and would take the left-most, client-controlled
       // entry. Replace it with the address Express resolved from its trusted
       // proxies so the header cannot be used to dodge per-IP limits.
-      headers.set("x-forwarded-for", req.ip ?? req.socket.remoteAddress ?? "");
-      if (!headers.get("x-forwarded-for")) headers.delete("x-forwarded-for");
+      const clientIp = req.ip ?? req.socket.remoteAddress;
+      if (clientIp) headers.set("x-forwarded-for", clientIp);
+      else headers.delete("x-forwarded-for");
 
       // Create Request object
       const request = new Request(url.toString(), {
@@ -96,10 +102,8 @@ app.use(async (req, res, next) => {
       res.send(body);
     } catch (error) {
       logger.error("Auth route error:", error);
-      res.status(500).json({
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : String(error),
-      });
+      // Details stay in the log; the client only gets a generic error
+      res.status(500).json({ error: "Internal server error" });
     }
     return;
   }

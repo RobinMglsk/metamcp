@@ -26,15 +26,6 @@ publicEndpointsRouter.use(
   }),
 );
 
-// JSON parsing middleware specifically for OpenAPI routes that need it
-publicEndpointsRouter.use((req, res, next) => {
-  // Only apply JSON parsing for OpenAPI tool execution endpoints
-  if (req.path.includes("/api/tools/") && req.method === "POST") {
-    return express.json({ limit: "50mb" })(req, res, next);
-  }
-  next();
-});
-
 // Use StreamableHTTP router for /mcp routes
 publicEndpointsRouter.use(streamableHttpRouter);
 

@@ -1,7 +1,8 @@
 import { ApiKeyCreateInput, ApiKeyUpdateInput } from "@repo/zod-types";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 
+import { apiKeyPrefix, hashApiKey } from "../../lib/api-key-hash";
 import { db } from "../index";
 import { apiKeysTable } from "../schema";
 
@@ -9,6 +10,11 @@ const nanoid = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   64,
 );
+
+// Listings never return the key or its hash: only the clear prefix followed by
+// an ellipsis (empty for rows without a prefix). The field keeps the name `key`
+// for API compatibility with existing clients; it is a display value only.
+const displayKey = sql<string>`CASE WHEN ${apiKeysTable.key_prefix} = '' THEN '' ELSE concat(${apiKeysTable.key_prefix}, '…') END`;
 
 export class ApiKeysRepository {
   /**
@@ -34,7 +40,8 @@ export class ApiKeysRepository {
       .insert(apiKeysTable)
       .values({
         name: input.name,
-        key: key,
+        key: hashApiKey(key),
+        key_prefix: apiKeyPrefix(key),
         user_id: input.user_id,
         is_active: input.is_active ?? true,
       })
@@ -51,22 +58,8 @@ export class ApiKeysRepository {
 
     return {
       ...createdApiKey,
-      key, // Return the actual key
+      key, // The plaintext key is only ever returned here, at creation
     };
-  }
-
-  async findByUserId(userId: string) {
-    return await db
-      .select({
-        uuid: apiKeysTable.uuid,
-        name: apiKeysTable.name,
-        key: apiKeysTable.key,
-        created_at: apiKeysTable.created_at,
-        is_active: apiKeysTable.is_active,
-      })
-      .from(apiKeysTable)
-      .where(eq(apiKeysTable.user_id, userId))
-      .orderBy(desc(apiKeysTable.created_at));
   }
 
   // Find all API keys (both public and user-owned)
@@ -75,7 +68,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -90,7 +83,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -106,7 +99,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -126,7 +119,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -145,7 +138,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -171,14 +164,31 @@ export class ApiKeysRepository {
     user_id?: string | null;
     key_uuid?: string;
   }> {
-    const [apiKey] = await db
-      .select({
-        uuid: apiKeysTable.uuid,
-        user_id: apiKeysTable.user_id,
-        is_active: apiKeysTable.is_active,
-      })
+    const columns = {
+      uuid: apiKeysTable.uuid,
+      user_id: apiKeysTable.user_id,
+      is_active: apiKeysTable.is_active,
+    };
+    let [apiKey] = await db
+      .select(columns)
       .from(apiKeysTable)
-      .where(eq(apiKeysTable.key, key));
+      .where(eq(apiKeysTable.key, hashApiKey(key)));
+
+    if (!apiKey) {
+      // A key inserted in plaintext by an older instance that was still running
+      // while this version was deployed (such rows have no prefix): accept it
+      // once and convert it to the hashed form.
+      [apiKey] = await db
+        .select(columns)
+        .from(apiKeysTable)
+        .where(and(eq(apiKeysTable.key, key), eq(apiKeysTable.key_prefix, "")));
+      if (apiKey) {
+        await db
+          .update(apiKeysTable)
+          .set({ key: hashApiKey(key), key_prefix: apiKeyPrefix(key) })
+          .where(eq(apiKeysTable.uuid, apiKey.uuid));
+      }
+    }
 
     if (!apiKey) {
       return { valid: false };
@@ -196,7 +206,13 @@ export class ApiKeysRepository {
     };
   }
 
-  async update(uuid: string, userId: string, input: ApiKeyUpdateInput) {
+  // Public keys (user_id NULL) can only be changed when `allowPublic` (admins).
+  async update(
+    uuid: string,
+    userId: string,
+    input: ApiKeyUpdateInput,
+    allowPublic = false,
+  ) {
     const [updatedApiKey] = await db
       .update(apiKeysTable)
       .set({
@@ -206,13 +222,16 @@ export class ApiKeysRepository {
       .where(
         and(
           eq(apiKeysTable.uuid, uuid),
-          or(eq(apiKeysTable.user_id, userId), isNull(apiKeysTable.user_id)),
+          or(
+            eq(apiKeysTable.user_id, userId),
+            allowPublic ? isNull(apiKeysTable.user_id) : undefined,
+          ),
         ),
       )
       .returning({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
       });
@@ -224,13 +243,16 @@ export class ApiKeysRepository {
     return updatedApiKey;
   }
 
-  async delete(uuid: string, userId: string) {
+  async delete(uuid: string, userId: string, allowPublic = false) {
     const [deletedApiKey] = await db
       .delete(apiKeysTable)
       .where(
         and(
           eq(apiKeysTable.uuid, uuid),
-          or(eq(apiKeysTable.user_id, userId), isNull(apiKeysTable.user_id)),
+          or(
+            eq(apiKeysTable.user_id, userId),
+            allowPublic ? isNull(apiKeysTable.user_id) : undefined,
+          ),
         ),
       )
       .returning({
@@ -243,5 +265,14 @@ export class ApiKeysRepository {
     }
 
     return deletedApiKey;
+  }
+
+  /**
+   * Removes a key by its exact name. Only for system-generated keys: their
+   * names (see lib/reserved-key-names) cannot be created or renamed to by
+   * users, so no user's key can share the name.
+   */
+  async deleteByName(name: string): Promise<void> {
+    await db.delete(apiKeysTable).where(eq(apiKeysTable.name, name));
   }
 }

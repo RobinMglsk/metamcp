@@ -3,7 +3,7 @@ import express from "express";
 import logger from "@/utils/logger";
 
 import { oauthRepository } from "../../db/repositories";
-import { verifyStoredClientSecret } from "../../lib/secret-hash";
+import { authenticateClient, upgradeLegacySecret } from "./client-auth";
 import {
   generateSecureAccessToken,
   generateSecureRefreshToken,
@@ -81,72 +81,6 @@ tokenRouter.post("/oauth/token", rateLimitToken, async (req, res) => {
 });
 
 /**
- * Authenticates a confidential client (client_secret_basic / client_secret_post).
- * Public clients ("none") are protected by PKCE instead. Returns an error
- * response body (and status) or null when the client is authenticated.
- */
-function authenticateClient(
-  req: express.Request,
-  clientData: {
-    client_id: string;
-    client_secret?: string | null;
-    token_endpoint_auth_method?: string | null;
-  },
-): {
-  status: number;
-  body: { error: string; error_description: string };
-} | null {
-  const method = clientData.token_endpoint_auth_method;
-  if (method === "client_secret_basic") {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Basic ")) {
-      return {
-        status: 401,
-        body: {
-          error: "invalid_client",
-          error_description: "Client authentication required via Basic auth",
-        },
-      };
-    }
-    const credentials = Buffer.from(
-      authHeader.substring(6),
-      "base64",
-    ).toString();
-    const sep = credentials.indexOf(":");
-    const authClientId = sep === -1 ? credentials : credentials.slice(0, sep);
-    const authClientSecret = sep === -1 ? "" : credentials.slice(sep + 1);
-    if (
-      authClientId !== clientData.client_id ||
-      !verifyStoredClientSecret(authClientSecret, clientData.client_secret)
-    ) {
-      return {
-        status: 401,
-        body: {
-          error: "invalid_client",
-          error_description: "Invalid client credentials",
-        },
-      };
-    }
-  } else if (method === "client_secret_post") {
-    if (
-      !verifyStoredClientSecret(
-        req.body?.client_secret,
-        clientData.client_secret,
-      )
-    ) {
-      return {
-        status: 401,
-        body: {
-          error: "invalid_client",
-          error_description: "Invalid client secret",
-        },
-      };
-    }
-  }
-  return null;
-}
-
-/**
  * Handle grant_type=authorization_code
  */
 async function handleAuthorizationCodeGrant(
@@ -164,8 +98,10 @@ async function handleAuthorizationCodeGrant(
   }
 
   // Look up and consume the authorization code in one step: it is single use,
-  // so of two concurrent redemptions only one succeeds (and a failed attempt
-  // burns the code).
+  // so of two concurrent redemptions only one succeeds. A failed attempt (wrong
+  // client secret, redirect_uri or PKCE verifier) burns the code as well, as
+  // RFC 6749 4.1.2 recommends: a client with a transient problem must restart
+  // the authorization flow.
   const codeData = await oauthRepository.consumeAuthCode(code);
   if (!codeData) {
     return res.status(400).json({
@@ -211,6 +147,9 @@ async function handleAuthorizationCodeGrant(
   if (clientAuthError) {
     return res.status(clientAuthError.status).json(clientAuthError.body);
   }
+  await upgradeLegacySecret(req, clientData, (id, hashed) =>
+    oauthRepository.upgradeClientSecret(id, hashed),
+  );
 
   // OAuth 2.1 Security: PKCE is mandatory for all clients
   if (!codeData.code_challenge) {
@@ -325,6 +264,9 @@ async function handleRefreshTokenGrant(
   if (refreshAuthError) {
     return res.status(refreshAuthError.status).json(refreshAuthError.body);
   }
+  await upgradeLegacySecret(req, refreshClient, (id, hashed) =>
+    oauthRepository.upgradeClientSecret(id, hashed),
+  );
 
   // Delete old token row (rotation: old refresh token is single-use)
   await oauthRepository.deleteAccessTokenByHash(tokenData.access_token);

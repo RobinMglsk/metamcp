@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../lib/authz", () => ({
   isAdmin: mocks.isAdmin,
+  canMutate: vi.fn().mockResolvedValue(true),
   STDIO_ADMIN_ONLY_MESSAGE: "stdio admin only",
 }));
 vi.mock("../lib/server-url-policy", () => ({

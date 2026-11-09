@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { LogsStatusIndicator } from "@/components/logs-status-indicator";
@@ -35,9 +35,11 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { type CurrentUser, useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslations } from "@/hooks/useTranslations";
 import { authClient } from "@/lib/auth-client";
 import { getLocalizedPath, SupportedLocale } from "@/lib/i18n";
+import { useLogsStore } from "@/lib/stores/logs-store";
 
 // Menu items function - now takes locale parameter
 const getMenuItems = (t: (key: string) => string, locale: SupportedLocale) => [
@@ -99,21 +101,8 @@ function LiveLogsMenuItem() {
   );
 }
 
-function UserInfoFooter() {
+function UserInfoFooter({ user }: { user: CurrentUser | null }) {
   const { t } = useTranslations();
-  const [user, setUser] = useState<{
-    name?: string | null;
-    email?: string | null;
-  } | null>(null);
-
-  // Get user info
-  useEffect(() => {
-    authClient.getSession().then((session) => {
-      if (session?.data?.user) {
-        setUser(session.data.user);
-      }
-    });
-  }, []);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -163,6 +152,13 @@ export default function SidebarLayout({
 }) {
   const { t, locale } = useTranslations();
   const items = getMenuItems(t, locale);
+  const { user, isAdmin } = useCurrentUser();
+
+  // Live logs are admin-only: once we know the user is an admin, (re)start the
+  // poller, which stays off for everyone else.
+  useEffect(() => {
+    if (isAdmin) useLogsStore.getState().enableForAdmin();
+  }, [isAdmin]);
 
   return (
     <SidebarProvider>
@@ -197,13 +193,13 @@ export default function SidebarLayout({
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-                <LiveLogsMenuItem />
+                {isAdmin && <LiveLogsMenuItem />}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
 
-        <UserInfoFooter />
+        <UserInfoFooter user={user} />
       </Sidebar>
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">

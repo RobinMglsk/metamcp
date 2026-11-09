@@ -1,7 +1,19 @@
 import { DatabaseMcpServer, McpServer } from "@repo/zod-types";
 
+import { redactSecrets } from "../../lib/redact";
+
+export type Viewer = { userId: string; isAdmin: boolean };
+
 export class McpServersSerializer {
-  static serializeMcpServer(dbServer: DatabaseMcpServer): McpServer {
+  static serializeMcpServer(
+    dbServer: DatabaseMcpServer,
+    viewer?: Viewer,
+  ): McpServer {
+    const server = McpServersSerializer.toDto(dbServer);
+    return viewer ? redactSecrets(server, dbServer.user_id, viewer) : server;
+  }
+
+  private static toDto(dbServer: DatabaseMcpServer): McpServer {
     return {
       uuid: dbServer.uuid,
       name: dbServer.name,
@@ -20,7 +32,12 @@ export class McpServersSerializer {
     };
   }
 
-  static serializeMcpServerList(dbServers: DatabaseMcpServer[]): McpServer[] {
-    return dbServers.map(this.serializeMcpServer);
+  static serializeMcpServerList(
+    dbServers: DatabaseMcpServer[],
+    viewer?: Viewer,
+  ): McpServer[] {
+    return dbServers.map((s) =>
+      McpServersSerializer.serializeMcpServer(s, viewer),
+    );
   }
 }

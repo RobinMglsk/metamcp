@@ -77,6 +77,14 @@ function isPrivateV6(ip: string): boolean {
   const embedded = embeddedIPv4(lower);
   if (embedded) return isPrivateV4(embedded);
 
+  const groups = ipv6Groups(lower);
+  if (groups) {
+    // Teredo (2001::/32) tunnels carry an obfuscated IPv4 address, and
+    // 2001:db8::/32 is the documentation range: neither is a public host
+    if (groups[0] === 0x2001 && (groups[1] === 0 || groups[1] === 0xdb8)) {
+      return true;
+    }
+  }
   const first = parseInt(lower.split(":")[0] || "0", 16);
   return (
     (first & 0xfe00) === 0xfc00 || // fc00::/7 unique local

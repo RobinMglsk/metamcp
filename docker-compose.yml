@@ -23,7 +23,7 @@ services:
       NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:12008}
       
       # Auth configuration
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-super-secret-key-change-this-in-production}
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env - generate one with openssl rand -base64 32}"
       
       # Docker networking fix
       TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL: ${TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL:-true}
@@ -184,7 +184,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
     ports:
-      - "${POSTGRES_EXTERNAL_PORT:-9433}:5432"
+      # Only reachable from this host; remove the 127.0.0.1 prefix to expose it deliberately
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-9433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

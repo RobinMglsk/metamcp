@@ -18,6 +18,7 @@ import {
   oauthSessionsRepository,
 } from "../db/repositories";
 import { OAuthSessionsSerializer } from "../db/serializers";
+import { canMutate, SHARED_ADMIN_ONLY_MESSAGE } from "../lib/authz";
 import { upstreamFetchFor } from "../lib/metamcp/upstream-fetch";
 import { tryRefreshUpstreamTokens } from "../lib/oauth-upstream/refresh-on-401";
 import {
@@ -91,9 +92,9 @@ async function resolveOwnedServerUrl(
       },
     };
   }
-  // Match the access rules used elsewhere: a server with a `user_id` is
-  // private to that user; a server with `user_id === null` is public.
-  if (server.user_id && server.user_id !== userId) {
+  // The OAuth session holds this server's credentials, so only its owner (or
+  // an administrator, for shared servers) may use or change it.
+  if (!(await canMutate(server.user_id, userId))) {
     return {
       ok: false,
       error: {
@@ -120,11 +121,31 @@ async function resolveOwnedServerUrl(
   return { ok: true, url: server.url };
 }
 
+// Ownership check for the plain session endpoints (the upstream URL is not
+// needed there). Returns an error message, or null when allowed.
+async function checkSessionAccess(
+  mcpServerUuid: string,
+  userId: string,
+): Promise<string | null> {
+  const server = await mcpServersRepository.findByUuid(mcpServerUuid);
+  if (!server) return "MCP server not found";
+  if (!(await canMutate(server.user_id, userId))) {
+    return server.user_id === null
+      ? SHARED_ADMIN_ONLY_MESSAGE
+      : "Access denied: you can only access OAuth sessions of servers you own";
+  }
+  return null;
+}
+
 export const oauthImplementations = {
   get: async (
     input: z.infer<typeof GetOAuthSessionRequestSchema>,
+    userId: string,
   ): Promise<z.infer<typeof GetOAuthSessionResponseSchema>> => {
     try {
+      const denied = await checkSessionAccess(input.mcp_server_uuid, userId);
+      if (denied) return { success: false as const, message: denied };
+
       const session = await oauthSessionsRepository.findByMcpServerUuid(
         input.mcp_server_uuid,
       );
@@ -152,8 +173,12 @@ export const oauthImplementations = {
 
   upsert: async (
     input: z.infer<typeof UpsertOAuthSessionRequestSchema>,
+    userId: string,
   ): Promise<z.infer<typeof UpsertOAuthSessionResponseSchema>> => {
     try {
+      const denied = await checkSessionAccess(input.mcp_server_uuid, userId);
+      if (denied) return { success: false as const, error: denied };
+
       const session = await oauthSessionsRepository.upsert({
         mcp_server_uuid: input.mcp_server_uuid,
         ...(input.client_information && {

@@ -34,6 +34,7 @@ import { mcpServersImplementations } from "../../trpc/mcp-servers.impl";
 import { namespacesImplementations } from "../../trpc/namespaces.impl";
 import { oauthImplementations } from "../../trpc/oauth.impl";
 import { toolsImplementations } from "../../trpc/tools.impl";
+import { isAdmin } from "../authz";
 import { createToolName } from "../metamcp/tool-name-parser";
 import { zodToMcpInputSchema } from "./zod-to-mcp-schema";
 
@@ -75,7 +76,7 @@ function definePublicTool(
   );
 }
 
-export const ADMIN_TOOLS: AdminToolDefinition[] = [
+const RAW_ADMIN_TOOLS: AdminToolDefinition[] = [
   // MCP Servers
   defineTool(
     "metamcp_list_mcp_servers",
@@ -489,15 +490,21 @@ export const ADMIN_TOOLS: AdminToolDefinition[] = [
     "metamcp_get_oauth_session",
     "Get OAuth session tokens for an upstream OAuth-enabled MCP server.",
     GetOAuthSessionRequestSchema,
-    async (_userId, input) =>
-      oauthImplementations.get(GetOAuthSessionRequestSchema.parse(input)),
+    async (userId, input) =>
+      oauthImplementations.get(
+        GetOAuthSessionRequestSchema.parse(input),
+        userId,
+      ),
   ),
   defineTool(
     "metamcp_upsert_oauth_session",
     "Create or update OAuth session tokens for an upstream MCP server.",
     UpsertOAuthSessionRequestSchema,
-    async (_userId, input) =>
-      oauthImplementations.upsert(UpsertOAuthSessionRequestSchema.parse(input)),
+    async (userId, input) =>
+      oauthImplementations.upsert(
+        UpsertOAuthSessionRequestSchema.parse(input),
+        userId,
+      ),
   ),
 
   // Logs
@@ -515,6 +522,38 @@ export const ADMIN_TOOLS: AdminToolDefinition[] = [
     async () => logsImplementations.clearLogs(),
   ),
 ];
+
+// Tools that change or expose global settings or logs: the same rule as the
+// adminProcedure-protected tRPC procedures (administrator role, read from the
+// database), because endpoints with admin tools enabled are open to any user.
+const ADMIN_ONLY_TOOL_NAMES = new Set([
+  "metamcp_set_signup_disabled",
+  "metamcp_set_sso_signup_disabled",
+  "metamcp_set_basic_auth_disabled",
+  "metamcp_set_mcp_timeout",
+  "metamcp_set_mcp_max_total_timeout",
+  "metamcp_set_mcp_max_attempts",
+  "metamcp_set_mcp_reset_timeout_on_progress",
+  "metamcp_set_session_lifetime",
+  "metamcp_get_all_configs",
+  "metamcp_set_config",
+  "metamcp_get_logs",
+  "metamcp_clear_logs",
+]);
+
+export const ADMIN_TOOLS: AdminToolDefinition[] = RAW_ADMIN_TOOLS.map((tool) =>
+  ADMIN_ONLY_TOOL_NAMES.has(tool.name)
+    ? {
+        ...tool,
+        handler: async (userId: string, input: unknown) => {
+          if (!(await isAdmin(userId))) {
+            throw new Error("Administrator access required");
+          }
+          return tool.handler(userId, input);
+        },
+      }
+    : tool,
+);
 
 export const ADMIN_TOOLS_BY_NAME = new Map(
   ADMIN_TOOLS.map((tool) => [tool.name, tool]),

@@ -4,6 +4,7 @@ import express from "express";
 import logger from "@/utils/logger";
 
 import { isPrivateOrLocalHost } from "../../lib/host-ranges";
+import { DEFAULT_JSON_LIMIT_BYTES } from "../../middleware/body-limits.middleware";
 
 // OAuth 2.0 Authorization Parameters interface
 export interface OAuthParams {
@@ -161,14 +162,16 @@ export function jsonParsingMiddleware(
   res: express.Response,
   next: express.NextFunction,
 ) {
-  // Only apply JSON parsing for OAuth POST endpoints that need parsed body
+  // Only apply JSON parsing for OAuth POST endpoints that need parsed body.
+  // (The global parser in index.ts normally has parsed the body already at
+  // 100 KB; this limit keeps the route correct if it is mounted elsewhere.)
   const needsJsonParsing =
     (req.path.startsWith("/oauth/") && req.method === "POST") ||
     (req.path === "/oauth/register" && req.method === "POST");
 
   if (needsJsonParsing) {
     return express.json({
-      limit: "10mb",
+      limit: DEFAULT_JSON_LIMIT_BYTES,
       type: "application/json",
     })(req, res, next);
   }
@@ -191,7 +194,7 @@ export function urlencodedParsingMiddleware(
   if (needsUrlencodedParsing) {
     return express.urlencoded({
       extended: true,
-      limit: "10mb",
+      limit: DEFAULT_JSON_LIMIT_BYTES,
     })(req, res, next);
   }
   next();
@@ -252,8 +255,15 @@ class RateLimiter {
 const authEndpointLimiter = new RateLimiter(20, 1 * 60 * 1000); // 20 attempts per 1 minute
 const tokenEndpointLimiter = new RateLimiter(20, 1 * 60 * 1000); // 10 attempts per 1 minute
 
-// Dynamic client registration is unauthenticated: allow far fewer per client
-const registrationEndpointLimiter = new RateLimiter(30, 60 * 60 * 1000); // 30 per hour
+// Dynamic client registration is unauthenticated: allow far fewer per client.
+// Behind the bundled Next.js proxy without TRUST_PROXY every client looks like
+// loopback and they all share one bucket; that shared bucket gets a much higher
+// ceiling so a single abuser cannot lock everyone out within minutes. Setting
+// TRUST_PROXY (see example.env) restores real per-client limits.
+const registrationEndpointLimiter = new RateLimiter(30, 60 * 60 * 1000); // 30 per hour per client
+const sharedRegistrationLimiter = new RateLimiter(300, 60 * 60 * 1000); // 300 per hour for the shared loopback bucket
+const isLoopbackAddress = (ip: string) =>
+  ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
 
 // Clean up rate limiter entries every 10 minutes
 setInterval(
@@ -261,6 +271,7 @@ setInterval(
     authEndpointLimiter.cleanup();
     tokenEndpointLimiter.cleanup();
     registrationEndpointLimiter.cleanup();
+    sharedRegistrationLimiter.cleanup();
   },
   10 * 60 * 1000,
 );
@@ -299,7 +310,10 @@ export function rateLimitRegistration(
 ) {
   const identifier = req.ip || req.socket?.remoteAddress || "unknown";
 
-  if (registrationEndpointLimiter.isRateLimited(identifier)) {
+  const limiter = isLoopbackAddress(identifier)
+    ? sharedRegistrationLimiter
+    : registrationEndpointLimiter;
+  if (limiter.isRateLimited(identifier)) {
     logger.info(
       `[RATE LIMIT] Registration endpoint rate limited for IP: ${identifier}`,
     );
