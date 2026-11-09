@@ -20,6 +20,7 @@ import {
   oauthSessionsRepository,
 } from "../db/repositories";
 import { McpServersSerializer } from "../db/serializers";
+import { isAdmin, STDIO_ADMIN_ONLY_MESSAGE } from "../lib/authz";
 import { mcpServerPool } from "../lib/metamcp/mcp-server-pool";
 import { clearOverrideCache } from "../lib/metamcp/metamcp-middleware/tool-overrides.functional";
 import { metaMcpServerPool } from "../lib/metamcp/metamcp-server-pool";
@@ -33,6 +34,13 @@ export const mcpServersImplementations = {
     userId: string,
   ): Promise<z.infer<typeof CreateMcpServerResponseSchema>> => {
     try {
+      if (
+        input.type === McpServerTypeEnum.enum.STDIO &&
+        !(await isAdmin(userId))
+      ) {
+        return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
+      }
+
       // Determine user ownership based on input.user_id or default to current user
       const effectiveUserId =
         input.user_id !== undefined ? input.user_id : userId;
@@ -137,6 +145,7 @@ export const mcpServersImplementations = {
     userId: string,
   ): Promise<z.infer<typeof BulkImportMcpServersResponseSchema>> => {
     try {
+      const callerIsAdmin = await isAdmin(userId);
       const serversToInsert = [];
       const errors: string[] = [];
       let imported = 0;
@@ -150,6 +159,14 @@ export const mcpServersImplementations = {
             throw new Error(
               `Server name "${serverName}" is invalid. Server names must only contain letters, numbers, underscores, and hyphens.`,
             );
+          }
+
+          if (
+            (serverConfig.type || McpServerTypeEnum.enum.STDIO) ===
+              McpServerTypeEnum.enum.STDIO &&
+            !callerIsAdmin
+          ) {
+            throw new Error(STDIO_ADMIN_ONLY_MESSAGE);
           }
 
           // Provide default type if not specified
@@ -386,6 +403,16 @@ export const mcpServersImplementations = {
           success: false as const,
           message: "Access denied: You can only update servers you own",
         };
+      }
+
+      // Non-admins may not turn a server into a STDIO one or change what a
+      // STDIO server executes.
+      const resultingType = input.type ?? server.type;
+      if (
+        resultingType === McpServerTypeEnum.enum.STDIO &&
+        !(await isAdmin(userId))
+      ) {
+        return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
       }
 
       // Determine user ownership based on input.user_id or keep existing ownership

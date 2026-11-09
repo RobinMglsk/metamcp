@@ -17,6 +17,7 @@ import { findActualExecutable } from "spawn-rx";
 import logger from "@/utils/logger";
 
 import { mcpServersRepository } from "../../db/repositories";
+import { isAdmin, STDIO_ADMIN_ONLY_MESSAGE } from "../../lib/authz";
 import mcpProxy from "../../lib/mcp-proxy";
 import { transformDockerUrl } from "../../lib/metamcp/client";
 import { mcpServerPool } from "../../lib/metamcp/mcp-server-pool";
@@ -191,6 +192,33 @@ const serverRouter = express.Router();
 
 // Apply better auth middleware to all MCP proxy routes
 serverRouter.use(betterAuthMcpMiddleware);
+
+// Spawning a local process from request parameters is remote code execution,
+// so only administrators may use the ad-hoc STDIO transport.
+const requireAdminForStdio = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  try {
+    if (
+      req.query.transportType === McpServerTypeEnum.enum.STDIO &&
+      !(await isAdmin(
+        (req as express.Request & { user?: { id?: string } }).user?.id,
+      ))
+    ) {
+      return res.status(403).json({
+        error: "Forbidden",
+        message: STDIO_ADMIN_ONLY_MESSAGE,
+      });
+    }
+    next();
+  } catch (error) {
+    logger.error("Error checking admin role for STDIO proxy request:", error);
+    return res.status(500).json({ error: "Authorization check failed" });
+  }
+};
+serverRouter.use(requireAdminForStdio);
 
 const webAppTransports: Map<string, Transport> = new Map<string, Transport>(); // Web app transports by web app sessionId
 const serverTransports: Map<string, Transport> = new Map<string, Transport>(); // Server Transports by web app sessionId

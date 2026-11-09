@@ -442,6 +442,7 @@ async function ensureUser(
       .set({
         name,
         emailVerified: true,
+        role: "admin", // bootstrap users are defined by the operator
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, user.id));
