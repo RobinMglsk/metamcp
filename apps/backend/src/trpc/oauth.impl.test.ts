@@ -19,6 +19,13 @@ vi.mock("../db/repositories", () => ({
   },
 }));
 
+// canMutate normally consults the database for shared (null-owner) servers;
+// here a shared server is simply "admin only" and the caller is not an admin.
+vi.mock("../lib/authz", () => ({
+  canMutate: async (owner: string | null, user: string) => owner === user,
+  SHARED_ADMIN_ONLY_MESSAGE: "shared servers are admin-only",
+}));
+
 // Logger writes to stdout otherwise.
 vi.mock("../utils/logger", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -804,7 +811,12 @@ describe("exchangeToken state CSRF validation", () => {
   // back-compat NULL branch). Pins the forward-through behaviour so a
   // future refactor of the spread cannot regress it.
   it("frontend.oauth.upsert forwards expected_state to the repository", async () => {
-    const { oauthImplementations, upsert } = await loadModule();
+    const { oauthImplementations, upsert, findServerByUuid } =
+      await loadModule();
+    findServerByUuid.mockResolvedValue({
+      uuid: SERVER_UUID,
+      user_id: "user-1",
+    });
     upsert.mockResolvedValue({
       uuid: "sess",
       mcp_server_uuid: SERVER_UUID,
@@ -815,10 +827,13 @@ describe("exchangeToken state CSRF validation", () => {
       updated_at: new Date(),
     });
 
-    await oauthImplementations.upsert({
-      mcp_server_uuid: SERVER_UUID,
-      expected_state: "the-csrf-nonce",
-    });
+    await oauthImplementations.upsert(
+      {
+        mcp_server_uuid: SERVER_UUID,
+        expected_state: "the-csrf-nonce",
+      },
+      "user-1",
+    );
 
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -826,5 +841,76 @@ describe("exchangeToken state CSRF validation", () => {
         expected_state: "the-csrf-nonce",
       }),
     );
+  });
+});
+
+describe("oauth session access control (get / upsert)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const load = async () => {
+    const repos = await import("../db/repositories");
+    const impl = await import("./oauth.impl");
+    return {
+      impl: impl.oauthImplementations,
+      find: repos.oauthSessionsRepository.findByMcpServerUuid as ReturnType<
+        typeof vi.fn
+      >,
+      upsert: repos.oauthSessionsRepository.upsert as ReturnType<typeof vi.fn>,
+      server: repos.mcpServersRepository.findByUuid as ReturnType<typeof vi.fn>,
+    };
+  };
+  const SERVER = "11111111-1111-4111-8111-111111111111";
+
+  it("get: the owner can read, another user and non-admins on shared servers cannot", async () => {
+    const { impl, find, server } = await load();
+    find.mockResolvedValue({
+      uuid: "s",
+      mcp_server_uuid: SERVER,
+      client_information: null,
+      tokens: { access_token: "secret-token", token_type: "Bearer" },
+      code_verifier: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    server.mockResolvedValue({ uuid: SERVER, user_id: "owner" });
+    expect((await impl.get({ mcp_server_uuid: SERVER }, "owner")).success).toBe(
+      true,
+    );
+
+    const other = await impl.get({ mcp_server_uuid: SERVER }, "someone-else");
+    expect(other.success).toBe(false);
+    expect(JSON.stringify(other)).not.toContain("secret-token");
+
+    server.mockResolvedValue({ uuid: SERVER, user_id: null });
+    const shared = await impl.get({ mcp_server_uuid: SERVER }, "someone-else");
+    expect(shared).toMatchObject({
+      success: false,
+      message: "shared servers are admin-only",
+    });
+    expect(JSON.stringify(shared)).not.toContain("secret-token");
+  });
+
+  it("get: unknown server", async () => {
+    const { impl, server, find } = await load();
+    server.mockResolvedValue(undefined);
+    expect(await impl.get({ mcp_server_uuid: SERVER }, "u")).toMatchObject({
+      success: false,
+      message: "MCP server not found",
+    });
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it("upsert: cannot overwrite another user's or a shared server's tokens", async () => {
+    const { impl, upsert, server } = await load();
+    const input = {
+      mcp_server_uuid: SERVER,
+      tokens: { access_token: "attacker", token_type: "Bearer" },
+    };
+    server.mockResolvedValue({ uuid: SERVER, user_id: "owner" });
+    expect((await impl.upsert(input, "attacker-user")).success).toBe(false);
+    server.mockResolvedValue({ uuid: SERVER, user_id: null });
+    expect((await impl.upsert(input, "attacker-user")).success).toBe(false);
+    expect(upsert).not.toHaveBeenCalled();
   });
 });

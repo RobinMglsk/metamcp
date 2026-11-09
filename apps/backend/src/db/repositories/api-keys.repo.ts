@@ -196,7 +196,13 @@ export class ApiKeysRepository {
     };
   }
 
-  async update(uuid: string, userId: string, input: ApiKeyUpdateInput) {
+  // Public keys (user_id NULL) can only be changed when `allowPublic` (admins).
+  async update(
+    uuid: string,
+    userId: string,
+    input: ApiKeyUpdateInput,
+    allowPublic = false,
+  ) {
     const [updatedApiKey] = await db
       .update(apiKeysTable)
       .set({
@@ -206,7 +212,10 @@ export class ApiKeysRepository {
       .where(
         and(
           eq(apiKeysTable.uuid, uuid),
-          or(eq(apiKeysTable.user_id, userId), isNull(apiKeysTable.user_id)),
+          or(
+            eq(apiKeysTable.user_id, userId),
+            allowPublic ? isNull(apiKeysTable.user_id) : undefined,
+          ),
         ),
       )
       .returning({
@@ -224,13 +233,16 @@ export class ApiKeysRepository {
     return updatedApiKey;
   }
 
-  async delete(uuid: string, userId: string) {
+  async delete(uuid: string, userId: string, allowPublic = false) {
     const [deletedApiKey] = await db
       .delete(apiKeysTable)
       .where(
         and(
           eq(apiKeysTable.uuid, uuid),
-          or(eq(apiKeysTable.user_id, userId), isNull(apiKeysTable.user_id)),
+          or(
+            eq(apiKeysTable.user_id, userId),
+            allowPublic ? isNull(apiKeysTable.user_id) : undefined,
+          ),
         ),
       )
       .returning({
