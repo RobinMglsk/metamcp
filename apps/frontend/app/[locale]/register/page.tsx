@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 
 import { DomainWarningBanner } from "@/components/domain-warning-banner";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { TerminalWindow } from "@/components/terminal-window";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -283,11 +284,13 @@ export default function RegisterPage() {
         <ThemeToggle />
         <LanguageSwitcher />
       </div>
-      <div className="w-full max-w-sm mx-auto flex flex-col justify-center space-y-6">
+      <div className="w-full max-w-md mx-auto flex flex-col justify-center space-y-6">
         <DomainWarningBanner />
-        <Suspense fallback={<LoadingFallback />}>
-          <RegisterForm />
-        </Suspense>
+        <TerminalWindow path="~/metamcp/register">
+          <Suspense fallback={<LoadingFallback />}>
+            <RegisterForm />
+          </Suspense>
+        </TerminalWindow>
       </div>
     </div>
   );
