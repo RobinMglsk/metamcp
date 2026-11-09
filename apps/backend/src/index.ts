@@ -3,7 +3,10 @@ import express from "express";
 import { auth } from "./auth";
 import { hasValidSession } from "./lib/session-check";
 import { initializeIdleServers, initializeOnStartup } from "./lib/startup";
-import { createJsonBodyParser } from "./middleware/body-limits.middleware";
+import {
+  createJsonBodyParser,
+  resolveTrpcLimit,
+} from "./middleware/body-limits.middleware";
 import mcpProxyRouter from "./routers/mcp-proxy";
 import oauthRouter from "./routers/oauth";
 import publicEndpointsRouter from "./routers/public-metamcp";
@@ -18,7 +21,7 @@ const app = express();
 app.use(
   createJsonBodyParser({
     hasValidSession,
-    trpcLimitBytes: Number(process.env.MAX_TRPC_BODY_BYTES) || undefined,
+    trpcLimitBytes: resolveTrpcLimit(process.env.MAX_TRPC_BODY_BYTES),
   }),
 );
 

@@ -166,7 +166,9 @@ export function jsonParsingMiddleware(
   res: express.Response,
   next: express.NextFunction,
 ) {
-  // Only apply JSON parsing for OAuth POST endpoints that need parsed body
+  // Only apply JSON parsing for OAuth POST endpoints that need parsed body.
+  // (The global parser in index.ts normally has parsed the body already at
+  // 100 KB; this limit keeps the route correct if it is mounted elsewhere.)
   const needsJsonParsing =
     (req.path.startsWith("/oauth/") && req.method === "POST") ||
     (req.path === "/oauth/register" && req.method === "POST");

@@ -1,5 +1,7 @@
 import express from "express";
 
+import logger from "@/utils/logger";
+
 /** Bodies up to this size are accepted from anyone on any route. */
 export const DEFAULT_JSON_LIMIT_BYTES = 100 * 1024;
 /** Larger tRPC bodies (bulk imports, big tool schemas) need a signed-in user. */
@@ -20,6 +22,35 @@ export interface BodyLimitOptions {
  * session was verified. Replaces a blanket 50 MB limit applied before
  * authentication.
  */
+/**
+ * Resolves MAX_TRPC_BODY_BYTES: a positive integer not below the default limit
+ * for everyone, otherwise the default (a smaller or invalid value would make
+ * the "large" limit stricter than the small one, or reject every body).
+ */
+export function resolveTrpcLimit(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_TRPC_JSON_LIMIT_BYTES;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < DEFAULT_JSON_LIMIT_BYTES) {
+    logger.warn(
+      `Ignoring MAX_TRPC_BODY_BYTES="${raw}": it must be an integer of at least ${DEFAULT_JSON_LIMIT_BYTES}; using ${DEFAULT_TRPC_JSON_LIMIT_BYTES}`,
+    );
+    return DEFAULT_TRPC_JSON_LIMIT_BYTES;
+  }
+  return parsed;
+}
+
+/** A request carries a body when it declares a length or a transfer encoding. */
+function hasBody(req: express.Request): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
+  const length = req.headers["content-length"];
+  return (
+    req.headers["transfer-encoding"] !== undefined ||
+    (length !== undefined && Number(length) > 0)
+  );
+}
+
 export function createJsonBodyParser({
   hasValidSession,
   trpcLimitBytes = DEFAULT_TRPC_JSON_LIMIT_BYTES,
@@ -29,9 +60,14 @@ export function createJsonBodyParser({
   const large = express.json({ limit: trpcLimitBytes });
 
   return async (req, res, next) => {
-    if (skipPrefixes.some((p) => req.path.startsWith(p))) return next();
-    if (!req.path.startsWith("/trpc/")) return small(req, res, next);
+    // Express routes case-insensitively, so the checks must be too
+    const path = req.path.toLowerCase();
+    if (skipPrefixes.some((p) => path.startsWith(p))) return next();
+    if (!path.startsWith("/trpc/")) return small(req, res, next);
 
+    // Requests without a body (public queries, CORS preflights) and small
+    // bodies need no session
+    if (!hasBody(req)) return next();
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared <= DEFAULT_JSON_LIMIT_BYTES) {
       return small(req, res, next);
@@ -45,7 +81,8 @@ export function createJsonBodyParser({
           message: "Authentication required for large requests",
         });
       }
-    } catch {
+    } catch (error) {
+      logger.error("Body limit: session check failed:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
     return large(req, res, next);

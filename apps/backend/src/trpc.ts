@@ -2,8 +2,9 @@ import type { BaseContext } from "@repo/trpc";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { Request, Response } from "express";
 
-import { auth, type Session, type User } from "./auth";
+import { type Session, type User } from "./auth";
 import { isAdmin } from "./lib/authz";
+import { getSessionFromRequest } from "./lib/session-check";
 import logger from "./utils/logger";
 
 // Extend the base context with Express request/response and auth data
@@ -26,36 +27,9 @@ export const createContext = async ({
   let session: Session | undefined;
 
   try {
-    // Check if we have cookies in the request
-    if (req.headers.cookie) {
-      // Create a proper Request object for better-auth
-      const sessionUrl = new URL(
-        "/api/auth/get-session",
-        `http://${req.headers.host}`,
-      );
-
-      const headers = new Headers();
-      headers.set("cookie", req.headers.cookie);
-
-      const sessionRequest = new Request(sessionUrl.toString(), {
-        method: "GET",
-        headers,
-      });
-
-      const sessionResponse = await auth.handler(sessionRequest);
-
-      if (sessionResponse.ok) {
-        const sessionData = (await sessionResponse.json()) as {
-          user?: User;
-          session?: Session;
-        };
-
-        if (sessionData?.user && sessionData?.session) {
-          user = sessionData.user;
-          session = sessionData.session;
-        }
-      }
-    }
+    const resolved = await getSessionFromRequest(req);
+    user = resolved.user;
+    session = resolved.session;
   } catch (error) {
     // Log error but don't throw - we want to allow unauthenticated requests
     logger.error("Error getting session in tRPC context:", error);

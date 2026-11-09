@@ -3,7 +3,18 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createJsonBodyParser } from "./body-limits.middleware";
+const logger = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("@/utils/logger", () => ({ default: logger }));
+
+import {
+  createJsonBodyParser,
+  resolveTrpcLimit,
+} from "./body-limits.middleware";
 
 const hasValidSession = vi.fn();
 let server: ReturnType<express.Express["listen"]>;
@@ -21,6 +32,17 @@ beforeAll(async () => {
     res.json({ bytes: JSON.stringify(req.body ?? null).length });
   };
   app.post("/trpc/x", echo);
+  app.get("/trpc/x", (_req, res) => {
+    res.json({ ok: true });
+  });
+  app.options("/trpc/x", (_req, res) => {
+    res.sendStatus(204);
+  });
+  app.post("/MCP-PROXY/x", async (req, res) => {
+    let n = 0;
+    for await (const c of req) n += (c as Buffer).length;
+    res.json({ raw: n, parsed: req.body !== undefined });
+  });
   app.post("/api/auth/x", echo);
   app.post("/metamcp/ep/api/tool", async (req, res) => {
     // not parsed by the global middleware: raw stream stays available
@@ -82,5 +104,59 @@ describe("JSON body limits", () => {
     const j = (await r.json()) as { parsed: boolean; raw: number };
     expect(j.parsed).toBe(false);
     expect(j.raw).toBeGreaterThan(500 * 1024);
+  });
+});
+
+describe("requests without a body", () => {
+  it("public tRPC queries and CORS preflights need no session", async () => {
+    hasValidSession.mockClear();
+    hasValidSession.mockResolvedValue(false);
+    const get = await fetch(base + "/trpc/x");
+    expect(get.status).toBe(200);
+    const options = await fetch(base + "/trpc/x", { method: "OPTIONS" });
+    expect(options.status).toBe(204);
+    expect(hasValidSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("path matching", () => {
+  it("is case-insensitive like Express routing", async () => {
+    // /MCP-PROXY/ must keep its raw stream (not parsed by the 100 KB parser)
+    const r = await post("/MCP-PROXY/x", 500 * 1024);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { parsed: boolean }).parsed).toBe(false);
+  });
+
+  it("applies the tRPC rules to /TRPC/ too", async () => {
+    hasValidSession.mockResolvedValue(false);
+    expect((await post("/TRPC/x", 200 * 1024)).status).toBe(401);
+  });
+});
+
+describe("failures", () => {
+  it("logs a failing session check", async () => {
+    logger.error.mockClear();
+    hasValidSession.mockRejectedValue(new Error("db down"));
+    expect((await post("/trpc/x", 200 * 1024)).status).toBe(500);
+    expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+describe("resolveTrpcLimit", () => {
+  it("defaults when unset or empty", () => {
+    expect(resolveTrpcLimit(undefined)).toBe(10 * 1024 * 1024);
+    expect(resolveTrpcLimit("  ")).toBe(10 * 1024 * 1024);
+  });
+
+  it("accepts integers of at least 100 KB", () => {
+    expect(resolveTrpcLimit("2097152")).toBe(2097152);
+    expect(resolveTrpcLimit("102400")).toBe(102400);
+  });
+
+  it("ignores values that would be stricter than the small limit or invalid", () => {
+    for (const bad of ["1024", "-5", "0", "abc", "1.5", "NaN"]) {
+      expect(resolveTrpcLimit(bad)).toBe(10 * 1024 * 1024);
+    }
+    expect(logger.warn).toHaveBeenCalled();
   });
 });
