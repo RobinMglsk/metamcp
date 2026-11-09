@@ -31,7 +31,5 @@
   "private": "Privado",
   "public": "Público",
   "ownershipDescription": "API keys privadas são visíveis apenas para você. API keys públicas podem ser usadas por qualquer pessoa.",
-  "hideApiKey": "Ocultar API key",
-  "showApiKey": "Mostrar API key",
-  "copyFullApiKey": "Copiar API key completa"
+  "newApiKeyWarning": "Copie esta chave agora. Ela é armazenada como hash e não será exibida novamente."
 }
