@@ -11,7 +11,7 @@ export const lookupEndpoint = async (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const endpointName = req.params.endpoint_name;
+  const endpointName = req.params.endpoint_name as string;
 
   try {
     const endpoint = await endpointsRepository.findByName(endpointName);

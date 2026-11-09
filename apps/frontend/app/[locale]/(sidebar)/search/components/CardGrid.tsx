@@ -4,13 +4,14 @@ import {
   createServerFormSchema,
   McpServerTypeEnum,
 } from "@repo/zod-types";
-import { Github, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { GithubIcon } from "@/components/github-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -614,7 +615,7 @@ export default function CardGrid({ items }: { items: SearchIndex }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Github className="w-4 h-4 mr-2" />
+                    <GithubIcon className="w-4 h-4 mr-2" />
                     {t("search:card.github")}
                   </Link>
                 </Button>

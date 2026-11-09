@@ -48,10 +48,6 @@ COPY . .
 # Build all packages and apps
 RUN pnpm build
 
-RUN sed -i -e "s/30000/600000/" \
-    "node_modules/.pnpm/next@15.5.12_react-dom@19.1.2_react@19.1.2__react@19.1.2/node_modules/next/dist/server/lib/router-utils/proxy-request.js" \
-    "node_modules/.pnpm/next@15.5.12_react-dom@19.1.2_react@19.1.2__react@19.1.2/node_modules/next/dist/esm/server/lib/router-utils/proxy-request.js"
-
 # Production runner stage
 FROM base AS runner
 WORKDIR /app
@@ -87,10 +83,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json ./
 COPY --from=builder --chown=nextjs:nodejs /app/pnpm-workspace.yaml ./
 
 # Install production dependencies only
-RUN pnpm install --prod
-
-# Install drizzle-kit locally in backend for migrations
-RUN cd apps/backend && pnpm add drizzle-kit@0.31.1
+# CI=true: node_modules copied from the builder includes dev deps, so pnpm must
+# purge it; without a TTY it refuses to unless it knows it runs non-interactively.
+RUN CI=true pnpm install --prod
+# (drizzle-kit is a backend dependency so docker-entrypoint.sh can run migrations.)
 
 # Copy startup script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

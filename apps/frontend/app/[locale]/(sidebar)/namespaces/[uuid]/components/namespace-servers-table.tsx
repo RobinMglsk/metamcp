@@ -8,11 +8,8 @@ import {
 import {
   ColumnDef,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
   SortingState,
-  useReactTable,
+  useTable,
 } from "@tanstack/react-table";
 import {
   ArrowUpDown,
@@ -48,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslations } from "@/hooks/useTranslations";
+import { ListTableFeatures, listTableFeatures } from "@/lib/table-features";
 import { trpc } from "@/lib/trpc";
 
 interface NamespaceServersTableProps {
@@ -102,8 +100,7 @@ export function NamespaceServersTable({
                     ? {
                         ...server,
                         status: updateServerStatusMutation.variables?.status as
-                          | "ACTIVE"
-                          | "INACTIVE",
+                          "ACTIVE" | "INACTIVE",
                       }
                     : server,
                 ),
@@ -175,7 +172,7 @@ export function NamespaceServersTable({
   };
 
   // Define columns for the data table
-  const columns: ColumnDef<NamespaceServer>[] = [
+  const columns: ColumnDef<ListTableFeatures, NamespaceServer>[] = [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -445,15 +442,13 @@ export function NamespaceServersTable({
     },
   ];
 
-  const table = useReactTable({
+  const table = useTable({
+    features: listTableFeatures,
     data: servers,
     columns,
     onSortingChange: setSorting,
     onGlobalFilterChange: (value) => setGlobalFilter(value || ""),
     globalFilterFn: "includesString",
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getRowId: (row) => row.uuid,
     state: {
       sorting,

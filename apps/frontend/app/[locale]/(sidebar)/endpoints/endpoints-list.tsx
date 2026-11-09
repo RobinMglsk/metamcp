@@ -4,11 +4,8 @@ import { EndpointWithNamespace } from "@repo/zod-types";
 import {
   ColumnDef,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
   SortingState,
-  useReactTable,
+  useTable,
 } from "@tanstack/react-table";
 import {
   ArrowUpDown,
@@ -52,6 +49,7 @@ import {
 } from "@/components/ui/table";
 import { useTranslations } from "@/hooks/useTranslations";
 import { getAppUrl } from "@/lib/env";
+import { ListTableFeatures, listTableFeatures } from "@/lib/table-features";
 import { trpc } from "@/lib/trpc";
 
 interface EndpointsListProps {
@@ -132,7 +130,7 @@ export function EndpointsList({ onRefresh }: EndpointsListProps) {
   };
 
   // Define columns for the data table
-  const columns: ColumnDef<EndpointWithNamespace>[] = [
+  const columns: ColumnDef<ListTableFeatures, EndpointWithNamespace>[] = [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -441,15 +439,13 @@ export function EndpointsList({ onRefresh }: EndpointsListProps) {
     },
   ];
 
-  const table = useReactTable({
+  const table = useTable({
+    features: listTableFeatures,
     data: endpoints,
     columns,
     onSortingChange: setSorting,
     onGlobalFilterChange: (value) => setGlobalFilter(value || ""),
     globalFilterFn: "includesString",
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getRowId: (row) => row.uuid,
     state: {
       sorting,

@@ -4,11 +4,8 @@ import { Namespace } from "@repo/zod-types";
 import {
   ColumnDef,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
   SortingState,
-  useReactTable,
+  useTable,
 } from "@tanstack/react-table";
 import {
   ArrowUpDown,
@@ -48,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslations } from "@/hooks/useTranslations";
+import { ListTableFeatures, listTableFeatures } from "@/lib/table-features";
 import { trpc } from "@/lib/trpc";
 
 export function NamespacesList() {
@@ -115,7 +113,7 @@ export function NamespacesList() {
   };
 
   // Define columns for the data table
-  const columns: ColumnDef<Namespace>[] = [
+  const columns: ColumnDef<ListTableFeatures, Namespace>[] = [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -259,13 +257,11 @@ export function NamespacesList() {
   ];
 
   // Table configuration
-  const table = useReactTable({
+  const table = useTable({
+    features: listTableFeatures,
     data: namespaces,
     columns,
     onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     onGlobalFilterChange: (value) => setGlobalFilter(value ?? ""),
     state: {
       sorting,
