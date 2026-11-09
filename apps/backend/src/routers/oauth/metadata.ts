@@ -2,6 +2,7 @@ import express from "express";
 
 import logger from "@/utils/logger";
 
+import { isRegistrationEnabled } from "./registration-validation";
 import { getBaseUrl } from "./utils";
 
 const metadataRouter = express.Router();
@@ -109,7 +110,9 @@ metadataRouter.get(
         // MCP-compatible OAuth endpoints (proxied through frontend)
         authorization_endpoint: `${baseUrl}/oauth/authorize`,
         token_endpoint: `${baseUrl}/oauth/token`,
-        registration_endpoint: `${baseUrl}/oauth/register`,
+        ...(isRegistrationEnabled()
+          ? { registration_endpoint: `${baseUrl}/oauth/register` }
+          : {}),
         userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
 
         // Supported response types (required by RFC 8414)

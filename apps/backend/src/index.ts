@@ -10,6 +10,23 @@ import logger from "./utils/logger";
 
 const app = express();
 
+// Behind the Next.js rewrite proxy (and usually nginx) every request reaches
+// the backend from loopback, so per-IP rate limits only see real client
+// addresses if forwarded headers from trusted proxies are honoured. Loopback
+// is the safe default (headers from other peers are ignored); override with
+// TRUST_PROXY (e.g. "1", "10.0.0.0/8", "false") for other topologies.
+const trustProxy = process.env.TRUST_PROXY ?? "loopback";
+app.set(
+  "trust proxy",
+  trustProxy === "true"
+    ? true
+    : trustProxy === "false"
+      ? false
+      : /^\d+$/.test(trustProxy)
+        ? Number(trustProxy)
+        : trustProxy,
+);
+
 // Global JSON middleware for non-proxy routes
 app.use((req, res, next) => {
   if (req.path.startsWith("/mcp-proxy/") || req.path.startsWith("/metamcp/")) {
