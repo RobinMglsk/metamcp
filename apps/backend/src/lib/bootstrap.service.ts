@@ -13,6 +13,7 @@ import {
   namespacesTable,
   usersTable,
 } from "../db/schema";
+import { apiKeyPrefix, hashApiKey } from "./api-key-hash";
 
 /**
  * Environment-based bootstrap for MetaMCP.
@@ -101,12 +102,6 @@ function nonEmpty(value: string | undefined): string | undefined {
 
 function generateApiKey(): string {
   return `sk_mt_${crypto.randomBytes(32).toString("hex")}`; // 64 hex chars
-}
-
-function maskKey(key: string): string {
-  if (!key) return "";
-  if (key.length <= 14) return `${key.slice(0, 6)}…`;
-  return `${key.slice(0, 10)}…${key.slice(-4)}`;
 }
 
 function sha256Hex(input: string): string {
@@ -350,7 +345,8 @@ async function ensureUser(
   );
 
   let preservedUserApiKeys:
-    { name: string; key: string; is_active: boolean }[] | undefined;
+    | { name: string; key: string; key_prefix: string; is_active: boolean }[]
+    | undefined;
 
   let recreated = false;
 
@@ -366,6 +362,7 @@ async function ensureUser(
           .select({
             name: apiKeysTable.name,
             key: apiKeysTable.key,
+            key_prefix: apiKeysTable.key_prefix,
             is_active: apiKeysTable.is_active,
           })
           .from(apiKeysTable)
@@ -457,13 +454,18 @@ async function ensureUser(
           .insert(apiKeysTable)
           .values({
             name: k.name,
-            key: k.key,
+            key: k.key, // already the stored hash
+            key_prefix: k.key_prefix,
             user_id: user.id,
             is_active: k.is_active,
           })
           .onConflictDoUpdate({
             target: [apiKeysTable.user_id, apiKeysTable.name],
-            set: { key: k.key, is_active: k.is_active },
+            set: {
+              key: k.key,
+              key_prefix: k.key_prefix,
+              is_active: k.is_active,
+            },
           });
       } catch (err) {
         console.warn(
@@ -605,7 +607,8 @@ async function bootstrapApiKeys(
         const key = generateApiKey();
         await db.insert(apiKeysTable).values({
           name,
-          key,
+          key: hashApiKey(key),
+          key_prefix: apiKeyPrefix(key),
           user_id: userId,
           is_active: true,
         });
@@ -614,14 +617,17 @@ async function bootstrapApiKeys(
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`
           : "(public)";
         console.log(
-          `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${maskKey(key)}`,
+          `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${key}`,
+        );
+        console.log(
+          "  ↳ Only a hash of this key is stored: copy it now, it cannot be shown again.",
         );
       } else {
         const ownerInfo = userId
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`
           : "(public)";
         console.log(
-          `✓ ${isPublic ? "Public" : "Private"} API key "${name}" ${ownerInfo} already exists: ${maskKey(existing.key)}`,
+          `✓ ${isPublic ? "Public" : "Private"} API key "${name}" ${ownerInfo} already exists: ${existing.key_prefix}…`,
         );
       }
     } catch (err) {

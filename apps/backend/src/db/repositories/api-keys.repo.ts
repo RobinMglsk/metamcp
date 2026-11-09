@@ -1,7 +1,8 @@
 import { ApiKeyCreateInput, ApiKeyUpdateInput } from "@repo/zod-types";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 
+import { apiKeyPrefix, hashApiKey } from "../../lib/api-key-hash";
 import { db } from "../index";
 import { apiKeysTable } from "../schema";
 
@@ -9,6 +10,9 @@ const nanoid = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   64,
 );
+
+// Listings never return the key: only its clear prefix followed by an ellipsis.
+const displayKey = sql<string>`concat(${apiKeysTable.key_prefix}, '…')`;
 
 export class ApiKeysRepository {
   /**
@@ -34,7 +38,8 @@ export class ApiKeysRepository {
       .insert(apiKeysTable)
       .values({
         name: input.name,
-        key: key,
+        key: hashApiKey(key),
+        key_prefix: apiKeyPrefix(key),
         user_id: input.user_id,
         is_active: input.is_active ?? true,
       })
@@ -51,7 +56,7 @@ export class ApiKeysRepository {
 
     return {
       ...createdApiKey,
-      key, // Return the actual key
+      key, // The plaintext key is only ever returned here, at creation
     };
   }
 
@@ -60,7 +65,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
       })
@@ -75,7 +80,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -90,7 +95,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -106,7 +111,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -126,7 +131,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -145,7 +150,7 @@ export class ApiKeysRepository {
       .select({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
         user_id: apiKeysTable.user_id,
@@ -178,7 +183,7 @@ export class ApiKeysRepository {
         is_active: apiKeysTable.is_active,
       })
       .from(apiKeysTable)
-      .where(eq(apiKeysTable.key, key));
+      .where(eq(apiKeysTable.key, hashApiKey(key)));
 
     if (!apiKey) {
       return { valid: false };
@@ -221,7 +226,7 @@ export class ApiKeysRepository {
       .returning({
         uuid: apiKeysTable.uuid,
         name: apiKeysTable.name,
-        key: apiKeysTable.key,
+        key: displayKey,
         created_at: apiKeysTable.created_at,
         is_active: apiKeysTable.is_active,
       });

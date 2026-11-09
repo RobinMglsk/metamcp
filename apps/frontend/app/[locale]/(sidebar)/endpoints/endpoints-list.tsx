@@ -78,7 +78,6 @@ export function EndpointsList({ onRefresh }: EndpointsListProps) {
   } = trpc.frontend.endpoints.list.useQuery();
 
   // Fetch user's API keys to use in URLs
-  const { data: apiKeysResponse } = trpc.frontend.apiKeys.list.useQuery();
 
   // Delete mutation
   const deleteEndpointMutation = trpc.frontend.endpoints.delete.useMutation({
@@ -326,11 +325,9 @@ export function EndpointsList({ onRefresh }: EndpointsListProps) {
           toast.success(t("endpoints:list.openApiSchemaUrlCopied"));
         };
 
-        const getApiKey = () => {
-          const apiKeys = apiKeysResponse?.apiKeys || [];
-          const activeApiKey = apiKeys.find((key) => key.is_active);
-          return activeApiKey?.key || "YOUR_API_KEY";
-        };
+        // API keys are stored hashed and cannot be shown again, so the
+        // snippets always use a placeholder.
+        const getApiKey = () => "YOUR_API_KEY";
 
         const copyFullSseUrlWithApiKey = () => {
           const apiKey = getApiKey();

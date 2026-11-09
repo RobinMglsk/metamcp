@@ -103,20 +103,14 @@ export const endpointsImplementations = {
           let bearerToken = "";
           if (input.enableApiKeyAuth) {
             try {
-              const userApiKeys = await apiKeysRepository.findByUserId(userId);
-              const activeApiKey = userApiKeys.find((key) => key.is_active);
-
-              if (activeApiKey) {
-                bearerToken = activeApiKey.key;
-              } else {
-                // Create a new API key if none exists
-                const newApiKey = await apiKeysRepository.create({
-                  name: "Auto-generated for MCP Server",
-                  user_id: userId,
-                  is_active: true,
-                });
-                bearerToken = newApiKey.key;
-              }
+              // Keys are stored hashed, so an existing key cannot be reused here:
+              // give the auto-generated MCP server its own dedicated key.
+              const newApiKey = await apiKeysRepository.create({
+                name: `Auto-generated for MCP Server ${input.name}`,
+                user_id: userId,
+                is_active: true,
+              });
+              bearerToken = newApiKey.key;
             } catch (apiKeyError) {
               logger.error(
                 "Error getting API key for MCP server:",
