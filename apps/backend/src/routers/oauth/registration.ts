@@ -3,6 +3,7 @@ import express from "express";
 import logger from "@/utils/logger";
 
 import { oauthRepository } from "../../db/repositories";
+import { hashClientSecretForStorage } from "../../lib/secret-hash";
 import {
   generateSecureClientId,
   generateSecureClientSecret,
@@ -149,7 +150,13 @@ registrationRouter.post("/oauth/register", rateLimitToken, async (req, res) => {
     };
 
     // Store the client registration
-    await oauthRepository.upsertClient(clientRegistration);
+    // Only a hash of the secret is stored; the plaintext is returned once below
+    await oauthRepository.upsertClient({
+      ...clientRegistration,
+      client_secret: clientSecret
+        ? hashClientSecretForStorage(clientSecret)
+        : null,
+    });
 
     // Prepare response according to RFC 7591 with OAuth 2.1 guidance
     const baseUrl = req.protocol + "://" + req.get("host");

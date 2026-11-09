@@ -8,6 +8,7 @@ import {
 } from "@repo/zod-types";
 import { and, eq, isNull, lt } from "drizzle-orm";
 
+import { sha256Hex } from "../../lib/secret-hash";
 import { db } from "../index";
 import {
   oauthAccessTokensTable,
@@ -46,8 +47,20 @@ export class OAuthRepository {
     const result = await db
       .select()
       .from(oauthAuthorizationCodesTable)
-      .where(eq(oauthAuthorizationCodesTable.code, code))
+      .where(eq(oauthAuthorizationCodesTable.code, sha256Hex(code)))
       .limit(1);
+    return result[0] || null;
+  }
+
+  /**
+   * Atomically fetches and deletes an authorization code (single use): of two
+   * concurrent redemptions only one gets the row.
+   */
+  async consumeAuthCode(code: string): Promise<OAuthAuthorizationCode | null> {
+    const result = await db
+      .delete(oauthAuthorizationCodesTable)
+      .where(eq(oauthAuthorizationCodesTable.code, sha256Hex(code)))
+      .returning();
     return result[0] || null;
   }
 
@@ -56,7 +69,7 @@ export class OAuthRepository {
     data: OAuthAuthorizationCodeCreateInput,
   ): Promise<void> {
     await db.insert(oauthAuthorizationCodesTable).values({
-      code,
+      code: sha256Hex(code),
       client_id: data.client_id,
       redirect_uri: data.redirect_uri,
       scope: data.scope,
@@ -70,7 +83,7 @@ export class OAuthRepository {
   async deleteAuthCode(code: string): Promise<void> {
     await db
       .delete(oauthAuthorizationCodesTable)
-      .where(eq(oauthAuthorizationCodesTable.code, code));
+      .where(eq(oauthAuthorizationCodesTable.code, sha256Hex(code)));
   }
 
   // ===== Access Tokens =====
@@ -79,7 +92,7 @@ export class OAuthRepository {
     const result = await db
       .select()
       .from(oauthAccessTokensTable)
-      .where(eq(oauthAccessTokensTable.access_token, token))
+      .where(eq(oauthAccessTokensTable.access_token, sha256Hex(token)))
       .limit(1);
     return result[0] || null;
   }
@@ -92,12 +105,12 @@ export class OAuthRepository {
     },
   ): Promise<void> {
     await db.insert(oauthAccessTokensTable).values({
-      access_token: token,
+      access_token: sha256Hex(token),
       client_id: data.client_id,
       user_id: data.user_id,
       scope: data.scope,
       expires_at: new Date(data.expires_at),
-      refresh_token: data.refresh_token ?? null,
+      refresh_token: data.refresh_token ? sha256Hex(data.refresh_token) : null,
       refresh_token_expires_at: data.refresh_token_expires_at
         ? new Date(data.refresh_token_expires_at)
         : null,
@@ -105,9 +118,14 @@ export class OAuthRepository {
   }
 
   async deleteAccessToken(token: string): Promise<void> {
+    await this.deleteAccessTokenByHash(sha256Hex(token));
+  }
+
+  /** For rows read back from the database, whose access_token is already the hash. */
+  async deleteAccessTokenByHash(tokenHash: string): Promise<void> {
     await db
       .delete(oauthAccessTokensTable)
-      .where(eq(oauthAccessTokensTable.access_token, token));
+      .where(eq(oauthAccessTokensTable.access_token, tokenHash));
   }
 
   // ===== Refresh Tokens =====
@@ -116,7 +134,7 @@ export class OAuthRepository {
     const result = await db
       .select()
       .from(oauthAccessTokensTable)
-      .where(eq(oauthAccessTokensTable.refresh_token, refreshToken))
+      .where(eq(oauthAccessTokensTable.refresh_token, sha256Hex(refreshToken)))
       .limit(1);
     return result[0] || null;
   }
