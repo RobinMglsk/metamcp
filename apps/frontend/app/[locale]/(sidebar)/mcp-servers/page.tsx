@@ -6,12 +6,13 @@ import {
   createServerFormSchema,
   McpServerTypeEnum,
 } from "@repo/zod-types";
-import { ChevronDown, Plus, Server } from "lucide-react";
-import { useState } from "react";
+import { AlertCircle, ChevronDown, Plus, Server } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { AdvancedOAuthSection } from "@/components/advanced-oauth-section";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,6 +48,13 @@ import { McpServersList } from "./mcp-servers-list";
 export default function McpServersPage() {
   const { t } = useTranslations();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // Shown inside the dialog instead of a toast: a toast is transient and
+  // overlaps the dialog, so a failed create was easy to miss.
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isDialogOpen) setCreateError(null);
+  }, [isDialogOpen]);
 
   const form = useForm<CreateServerFormData>({
     resolver: createTranslatedZodResolver(createServerFormSchema, t),
@@ -84,15 +92,16 @@ export default function McpServersPage() {
         toast.success(t("mcp-servers:serverCreated"));
       } else {
         // Handle backend error response
-        toast.error(data.message || t("mcp-servers:createError"));
+        setCreateError(data.message || t("mcp-servers:createError"));
       }
     },
     onError: (error) => {
-      toast.error(t("mcp-servers:createError") + ": " + error.message);
+      setCreateError(t("mcp-servers:createError") + ": " + error.message);
     },
   });
 
   const onSubmit = (data: CreateServerFormData) => {
+    setCreateError(null);
     // Parse args string into array by splitting on spaces
     const argsArray = data.args
       ? data.args
@@ -229,6 +238,13 @@ export default function McpServersPage() {
                   onSubmit={form.handleSubmit(onSubmit)}
                   className="space-y-4"
                 >
+                  {createError && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{createError}</AlertDescription>
+                    </Alert>
+                  )}
+
                   <FormField
                     control={form.control}
                     name="name"
