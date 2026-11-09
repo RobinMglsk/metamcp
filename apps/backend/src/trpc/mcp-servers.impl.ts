@@ -20,7 +20,12 @@ import {
   oauthSessionsRepository,
 } from "../db/repositories";
 import { McpServersSerializer } from "../db/serializers";
-import { isAdmin, STDIO_ADMIN_ONLY_MESSAGE } from "../lib/authz";
+import {
+  canMutate,
+  denyMessage,
+  isAdmin,
+  STDIO_ADMIN_ONLY_MESSAGE,
+} from "../lib/authz";
 import { mcpServerPool } from "../lib/metamcp/mcp-server-pool";
 import { clearOverrideCache } from "../lib/metamcp/metamcp-middleware/tool-overrides.functional";
 import { metaMcpServerPool } from "../lib/metamcp/metamcp-server-pool";
@@ -127,7 +132,10 @@ export const mcpServersImplementations = {
 
       return {
         success: true as const,
-        data: McpServersSerializer.serializeMcpServerList(servers),
+        data: McpServersSerializer.serializeMcpServerList(servers, {
+          userId,
+          isAdmin: await isAdmin(userId),
+        }),
         message: "MCP servers retrieved successfully",
       };
     } catch (error) {
@@ -273,7 +281,10 @@ export const mcpServersImplementations = {
 
       return {
         success: true as const,
-        data: McpServersSerializer.serializeMcpServer(server),
+        data: McpServersSerializer.serializeMcpServer(server, {
+          userId,
+          isAdmin: await isAdmin(userId),
+        }),
         message: "MCP server retrieved successfully",
       };
     } catch (error) {
@@ -303,10 +314,13 @@ export const mcpServersImplementations = {
       }
 
       // Only server owner can delete their own servers, only admin can delete public servers
-      if (server.user_id && server.user_id !== userId) {
+      if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only delete servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only delete servers you own",
+          ),
         };
       }
 
@@ -398,10 +412,13 @@ export const mcpServersImplementations = {
       }
 
       // Only server owner can update their own servers, only admin can update public servers
-      if (server.user_id && server.user_id !== userId) {
+      if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only update servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only update servers you own",
+          ),
         };
       }
 

@@ -142,10 +142,10 @@
     "shttpUrlCopied": "URL Streamable HTTP copiada para a área de transferência",
     "openApiUrlCopied": "URL OpenAPI copiada para a área de transferência",
     "openApiSchemaUrlCopied": "URL do Schema OpenAPI copiada para a área de transferência",
-    "sseUrlWithApiKeyCopied": "URL SSE com parâmetro de API key copiada para a área de transferência",
-    "shttpUrlWithApiKeyCopied": "URL SHTTP com parâmetro de API key copiada para a área de transferência",
-    "openApiUrlWithApiKeyCopied": "URL OpenAPI com parâmetro de API key copiada para a área de transferência",
-    "openApiSchemaUrlWithApiKeyCopied": "URL do Schema OpenAPI com parâmetro de API key copiada para a área de transferência",
+    "sseUrlWithApiKeyCopied": "URL SSE com parâmetro de API key copiada para a área de transferência. Substitua YOUR_API_KEY pela sua chave de API.",
+    "shttpUrlWithApiKeyCopied": "URL SHTTP com parâmetro de API key copiada para a área de transferência. Substitua YOUR_API_KEY pela sua chave de API.",
+    "openApiUrlWithApiKeyCopied": "URL OpenAPI com parâmetro de API key copiada para a área de transferência. Substitua YOUR_API_KEY pela sua chave de API.",
+    "openApiSchemaUrlWithApiKeyCopied": "URL do Schema OpenAPI com parâmetro de API key copiada para a área de transferência. Substitua YOUR_API_KEY pela sua chave de API.",
     "noResults": "Sem resultados."
   }
 }

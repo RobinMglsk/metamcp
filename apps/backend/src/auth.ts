@@ -5,6 +5,7 @@ import { genericOAuth, GenericOAuthConfig } from "better-auth/plugins";
 import { db } from "./db/index";
 import * as schema from "./db/schema";
 import { configService } from "./lib/config.service";
+import { enforceStartupConfig } from "./lib/config-guard";
 import logger from "./utils/logger";
 
 // Provide default values for development
@@ -19,6 +20,9 @@ const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 function resolveLogLevel(raw: string | undefined) {
   return LOG_LEVELS.find((l) => l === raw) ?? "warn";
 }
+
+// Refuse to run (in production) with placeholder secrets/passwords
+enforceStartupConfig();
 
 const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
 const BETTER_AUTH_URL = process.env.APP_URL;
