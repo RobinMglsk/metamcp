@@ -27,6 +27,11 @@ describe("isPrivateOrLocalHost", () => {
     "[::ffff:127.0.0.1]",
     "::ffff:7f00:1",
     "::ffff:a9fe:a9fe",
+    "64:ff9b::a9fe:a9fe", // NAT64 of 169.254.169.254
+    "64:ff9b::7f00:1", // NAT64 of 127.0.0.1
+    "2002:a9fe:a9fe::1", // 6to4 of 169.254.169.254
+    "2002:0a00:0001::1", // 6to4 of 10.0.0.1
+    "::7f00:1", // IPv4-compatible 127.0.0.1
   ])("treats %s as private/local", (h) => {
     expect(isPrivateOrLocalHost(h)).toBe(true);
   });

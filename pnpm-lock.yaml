@@ -94,6 +94,9 @@ importers:
       spawn-rx:
         specifier: ^6.0.1
         version: 6.0.1
+      undici:
+        specifier: ^8.12.4
+        version: 8.12.4
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -4663,6 +4666,10 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
+  undici@8.12.4:
+    resolution: {integrity: sha512-8Mx+uNKKER2bA4AdtedkqRbwUCIJFr2nJckXRe5yrDqzePqwLP7VNcctN8/XdmDSbF7mS+jJKIszlL+vbam1VA==}
+    engines: {node: '>=22.19.0'}
+
   unicorn-magic@0.3.0:
     resolution: {integrity: sha512-+QBBXBCvifc56fsbuxZQ6Sic3wqqc3WWaqxs58gvJrcOuN83HGTCwz3oS5phzU9LthRNE9VrJCFCLUgHeeFnfA==}
     engines: {node: '>=18'}
@@ -8866,6 +8873,8 @@ snapshots:
       which-boxed-primitive: 1.1.1
 
   undici-types@8.9.0: {}
+
+  undici@8.12.4: {}
 
   unicorn-magic@0.3.0: {}
 

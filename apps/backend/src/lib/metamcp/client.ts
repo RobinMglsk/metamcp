@@ -11,10 +11,10 @@ import { oauthSessionsRepository } from "../../db/repositories";
 import { tryRefreshUpstreamTokens } from "../oauth-upstream/refresh-on-401";
 import { recoverFromPostAuthRace } from "../oauth-upstream/retry-post-auth";
 import { isUpstreamUnauthorizedError } from "../oauth-upstream/token-exchange";
-import { createGuardedFetch } from "../ssrf-guard";
 import { ProcessManagedStdioTransport } from "../stdio-transport/process-managed-transport";
 import { metamcpLogStore } from "./log-store";
 import { serverErrorTracker } from "./server-error-tracker";
+import { upstreamFetchFor } from "./upstream-fetch";
 import { resolveEnvVariables } from "./utils";
 
 const sleep = (time: number) =>
@@ -29,11 +29,6 @@ export interface ConnectedClient {
 /**
  * Transforms localhost URLs to use host.docker.internal when running inside Docker
  */
-// Saved servers may legitimately live on internal networks (their URL was
-// validated against the owner's policy when it was saved), so only link-local
-// and cloud-metadata addresses are refused here, including via redirects.
-const upstreamFetch = createGuardedFetch({ allowPrivate: true });
-
 export const transformDockerUrl = (url: string): string => {
   if (process.env.TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL === "true") {
     const transformed = url.replace(
@@ -49,6 +44,9 @@ export const createMetaMcpClient = (
   serverParams: ServerParameters,
 ): { client: Client | undefined; transport: Transport | undefined } => {
   let transport: Transport | undefined;
+  // Everything sent to the upstream goes through the guarded fetch, evaluated
+  // with the server owner's outbound policy (see upstream-fetch.ts)
+  const upstreamFetch = upstreamFetchFor(serverParams.uuid);
 
   // Create the appropriate transport based on server type
   // Default to "STDIO" if type is undefined

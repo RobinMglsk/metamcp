@@ -15,10 +15,12 @@ import logger from "../../utils/logger";
 import { createGuardedFetch } from "../ssrf-guard";
 
 // Discovery documents are controlled by the upstream server, so the endpoints
-// they point at are untrusted: refuse link-local / cloud-metadata targets
-// (also via redirects) for discovery and the token POST.
+// they point at are untrusted. Callers pass a fetch built with the MCP server
+// owner's outbound policy (upstreamFetchFor); without one the strictest policy
+// (no private targets) applies. Link-local / cloud-metadata targets are always
+// refused, also via redirects.
 const upstreamOAuthFetch = createGuardedFetch({
-  allowPrivate: true,
+  allowPrivate: false,
 }) as unknown as typeof fetch;
 
 export type TokenEndpointAuthMethod =

@@ -26,12 +26,9 @@ import mcpProxy from "../../lib/mcp-proxy";
 import { transformDockerUrl } from "../../lib/metamcp/client";
 import { mcpServerPool } from "../../lib/metamcp/mcp-server-pool";
 import { resolveEnvVariables } from "../../lib/metamcp/utils";
-import {
-  assertOutboundUrlAllowed,
-  createGuardedFetch,
-  OutboundUrlError,
-} from "../../lib/ssrf-guard";
+import { createGuardedFetch } from "../../lib/ssrf-guard";
 import { ProcessManagedStdioTransport } from "../../lib/stdio-transport/process-managed-transport";
+import { createAllowedTargetUrlMiddleware } from "../../middleware/allowed-target-url.middleware";
 import { betterAuthMcpMiddleware } from "../../middleware/better-auth-mcp.middleware";
 
 const SSE_HEADERS_PASSTHROUGH = ["authorization"];
@@ -229,39 +226,7 @@ const requireAdminForStdio = async (
 };
 serverRouter.use(requireAdminForStdio);
 
-// The proxy fetches whatever URL the caller supplies: refuse targets the
-// caller's outbound policy does not allow (metadata/link-local for everyone,
-// private networks for non-admins).
-const requireAllowedTargetUrl = async (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const type = req.query.transportType;
-  if (
-    (type !== McpServerTypeEnum.enum.SSE &&
-      type !== McpServerTypeEnum.enum.STREAMABLE_HTTP) ||
-    typeof req.query.url !== "string"
-  ) {
-    return next();
-  }
-  try {
-    const policy = await outboundPolicyForUser(
-      (req as express.Request & { user?: { id?: string } }).user?.id,
-    );
-    await assertOutboundUrlAllowed(transformDockerUrl(req.query.url), policy);
-    next();
-  } catch (error) {
-    if (error instanceof OutboundUrlError) {
-      return res
-        .status(403)
-        .json({ error: "Forbidden", message: error.message });
-    }
-    logger.error("Error validating proxy target URL:", error);
-    return res.status(500).json({ error: "Authorization check failed" });
-  }
-};
-serverRouter.use(requireAllowedTargetUrl);
+serverRouter.use(createAllowedTargetUrlMiddleware(transformDockerUrl));
 
 const webAppTransports: Map<string, Transport> = new Map<string, Transport>(); // Web app transports by web app sessionId
 const serverTransports: Map<string, Transport> = new Map<string, Transport>(); // Server Transports by web app sessionId
