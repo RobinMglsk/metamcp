@@ -15,11 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslations } from "@/hooks/useTranslations";
 import { useLogsStore } from "@/lib/stores/logs-store";
 
 export default function LiveLogsPage() {
   const { t } = useTranslations();
+  const { loading, isAdmin } = useCurrentUser();
   const [showClearDialog, setShowClearDialog] = useState(false);
   const {
     logs,
@@ -76,6 +78,19 @@ export default function LiveLogsPage() {
   const formatTimestamp = (timestamp: Date) => {
     return new Date(timestamp).toLocaleString();
   };
+
+  // The logs API is admin-only
+  if (!loading && !isAdmin) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-16 text-center">
+        <FileTerminal className="h-8 w-8 text-muted-foreground" />
+        <h1 className="text-xl font-semibold">{t("logs:adminOnlyTitle")}</h1>
+        <p className="text-muted-foreground">
+          {t("logs:adminOnlyDescription")}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -56,5 +56,7 @@
   "connecting": "Connecting...",
   "reconnecting": "Reconnecting...",
   "logsCount": "{{count}} logs",
-  "filteredLogsCount": "{{count}} of {{total}} logs shown"
+  "filteredLogsCount": "{{count}} of {{total}} logs shown",
+  "adminOnlyTitle": "Administrator access required",
+  "adminOnlyDescription": "Only administrators can view the live logs."
 }
