@@ -60,3 +60,57 @@ describe("redactSecrets", () => {
     );
   });
 });
+
+describe("redactSecrets: urls and args", () => {
+  const base = { env: {}, bearerToken: null, headers: {} };
+
+  it("hides query tokens and userinfo of the url for other users", () => {
+    const r = redactSecrets(
+      {
+        ...base,
+        url: "https://user:pw@mcp.example.com/sse?api_key=SECRET&x=1#f",
+        args: [],
+      },
+      null,
+      { userId: "u2", isAdmin: false },
+    );
+    expect(r.url).toBe(`https://mcp.example.com/sse?${REDACTED}#f`);
+    expect(r.url).not.toContain("SECRET");
+    expect(r.url).not.toContain("pw");
+  });
+
+  it("leaves urls without secrets untouched", () => {
+    const r = redactSecrets(
+      { ...base, url: "https://mcp.example.com/sse", args: [] },
+      null,
+      {
+        userId: "u2",
+        isAdmin: false,
+      },
+    );
+    expect(r.url).toBe("https://mcp.example.com/sse");
+  });
+
+  it("masks command-line arguments (they often carry tokens) but keeps their count", () => {
+    const r = redactSecrets(
+      { ...base, url: null, args: ["--token=abc", "-y", "server"] },
+      null,
+      { userId: "u2", isAdmin: false },
+    );
+    expect(r.args).toEqual([REDACTED, REDACTED, REDACTED]);
+  });
+
+  it("shows everything to admins and owners", () => {
+    const server = {
+      ...base,
+      url: "https://a.example/?k=1",
+      args: ["--token=abc"],
+    };
+    expect(redactSecrets(server, null, { userId: "a", isAdmin: true })).toBe(
+      server,
+    );
+    expect(redactSecrets(server, "u1", { userId: "u1", isAdmin: false })).toBe(
+      server,
+    );
+  });
+});

@@ -20,7 +20,12 @@ import {
   oauthSessionsRepository,
 } from "../db/repositories";
 import { McpServersSerializer } from "../db/serializers";
-import { canMutate, isAdmin, STDIO_ADMIN_ONLY_MESSAGE } from "../lib/authz";
+import {
+  canMutate,
+  denyMessage,
+  isAdmin,
+  STDIO_ADMIN_ONLY_MESSAGE,
+} from "../lib/authz";
 import { mcpServerPool } from "../lib/metamcp/mcp-server-pool";
 import { clearOverrideCache } from "../lib/metamcp/metamcp-middleware/tool-overrides.functional";
 import { metaMcpServerPool } from "../lib/metamcp/metamcp-server-pool";
@@ -312,7 +317,10 @@ export const mcpServersImplementations = {
       if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only delete servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only delete servers you own",
+          ),
         };
       }
 
@@ -407,7 +415,10 @@ export const mcpServersImplementations = {
       if (!(await canMutate(server.user_id, userId))) {
         return {
           success: false as const,
-          message: "Access denied: You can only update servers you own",
+          message: denyMessage(
+            server.user_id,
+            "Access denied: You can only update servers you own",
+          ),
         };
       }
 
