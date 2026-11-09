@@ -173,7 +173,7 @@ export function jsonParsingMiddleware(
 
   if (needsJsonParsing) {
     return express.json({
-      limit: "10mb",
+      limit: "100kb",
       type: "application/json",
     })(req, res, next);
   }
@@ -196,7 +196,7 @@ export function urlencodedParsingMiddleware(
   if (needsUrlencodedParsing) {
     return express.urlencoded({
       extended: true,
-      limit: "10mb",
+      limit: "100kb",
     })(req, res, next);
   }
   next();
