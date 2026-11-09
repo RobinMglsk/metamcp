@@ -7,9 +7,19 @@ const mocks = vi.hoisted(() => ({
   limit: vi.fn(),
   server: { findByUuid: vi.fn(), deleteByUuid: vi.fn(), update: vi.fn() },
   mappings: { findNamespacesByServerUuid: vi.fn() },
-  namespace: { findByUuid: vi.fn(), deleteByUuid: vi.fn() },
-  endpoint: { findByUuidWithNamespace: vi.fn(), deleteByUuid: vi.fn() },
-  keys: { update: vi.fn(), delete: vi.fn(), findAccessibleToUser: vi.fn() },
+  namespace: { findByUuid: vi.fn(), deleteByUuid: vi.fn(), create: vi.fn() },
+  endpoint: {
+    findByUuidWithNamespace: vi.fn(),
+    deleteByUuid: vi.fn(),
+    create: vi.fn(),
+    findByName: vi.fn().mockResolvedValue(undefined),
+  },
+  keys: {
+    update: vi.fn(),
+    delete: vi.fn(),
+    create: vi.fn(),
+    findAccessibleToUser: vi.fn(),
+  },
 }));
 
 vi.mock("../db", () => ({
@@ -29,6 +39,7 @@ vi.mock("../db/repositories", () => ({
     update = mocks.keys.update;
     deleteByName = vi.fn().mockResolvedValue(undefined);
     delete = mocks.keys.delete;
+    create = mocks.keys.create;
     findAccessibleToUser = mocks.keys.findAccessibleToUser;
   },
 }));
@@ -257,5 +268,35 @@ describe("shared (user_id = null) resources are admin-only to modify", () => {
       ),
     ).rejects.toThrow(/reserved/);
     expect(mocks.keys.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("a caller-supplied user_id cannot assign ownership to someone else", () => {
+  const input = { name: "x", user_id: null } as never;
+  const otherUser = { name: "x", user_id: "someone-else" } as never;
+
+  it("namespaces: create is refused for non-admins and never hits the repository", async () => {
+    for (const body of [input, otherUser]) {
+      const res = await namespacesImplementations.create(body, as("user-1"));
+      expect(res).toMatchObject({ success: false });
+    }
+    expect(mocks.namespace.create).not.toHaveBeenCalled();
+  });
+
+  it("endpoints: create is refused for non-admins", async () => {
+    for (const body of [input, otherUser]) {
+      const res = await endpointsImplementations.create(body, as("user-1"));
+      expect(res).toMatchObject({ success: false });
+    }
+    expect(mocks.endpoint.create).not.toHaveBeenCalled();
+  });
+
+  it("api keys: create is refused for non-admins", async () => {
+    for (const body of [input, otherUser]) {
+      await expect(
+        apiKeysImplementations.create(body, as("user-1")),
+      ).rejects.toThrow();
+    }
+    expect(mocks.keys.create).not.toHaveBeenCalled();
   });
 });

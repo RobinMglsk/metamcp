@@ -28,7 +28,13 @@ import {
   toolsRepository,
 } from "../db/repositories";
 import { NamespacesSerializer } from "../db/serializers";
-import { canMutate, denyMessage, isAdmin } from "../lib/authz";
+import {
+  canMutate,
+  denyMessage,
+  isAdmin,
+  OWNER_ADMIN_ONLY_MESSAGE,
+  resolveOwner,
+} from "../lib/authz";
 import {
   clearOverrideCache,
   mapOverrideNameToOriginal,
@@ -41,9 +47,11 @@ export const namespacesImplementations = {
     userId: string,
   ): Promise<z.infer<typeof CreateNamespaceResponseSchema>> => {
     try {
-      // Determine user ownership based on input.user_id or default to current user
-      const effectiveUserId =
-        input.user_id !== undefined ? input.user_id : userId;
+      const owner = await resolveOwner(input.user_id, userId, userId);
+      if (!owner.ok) {
+        return { success: false as const, message: OWNER_ADMIN_ONLY_MESSAGE };
+      }
+      const effectiveUserId = owner.ownerId;
       const isPublicNamespace = effectiveUserId === null;
 
       // Validate server accessibility and relationship rules
@@ -343,9 +351,16 @@ export const namespacesImplementations = {
         };
       }
 
-      // Determine the effective ownership for validation (use input.user_id if provided, otherwise existing)
-      const effectiveUserId =
-        input.user_id !== undefined ? input.user_id : existingNamespace.user_id;
+      // Effective ownership for validation (input.user_id if provided, otherwise existing)
+      const owner = await resolveOwner(
+        input.user_id,
+        existingNamespace.user_id,
+        userId,
+      );
+      if (!owner.ok) {
+        return { success: false as const, message: OWNER_ADMIN_ONLY_MESSAGE };
+      }
+      const effectiveUserId = owner.ownerId;
       const isPublicNamespace = effectiveUserId === null;
 
       // Validate server accessibility and relationship rules if servers are being updated
@@ -391,7 +406,7 @@ export const namespacesImplementations = {
         uuid: input.uuid,
         name: input.name,
         description: input.description,
-        user_id: input.user_id,
+        user_id: input.user_id === undefined ? undefined : effectiveUserId,
         mcpServerUuids: input.mcpServerUuids,
       });
 

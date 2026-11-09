@@ -24,6 +24,8 @@ import {
   canMutate,
   denyMessage,
   isAdmin,
+  OWNER_ADMIN_ONLY_MESSAGE,
+  resolveOwner,
   STDIO_ADMIN_ONLY_MESSAGE,
 } from "../lib/authz";
 import { mcpServerPool } from "../lib/metamcp/mcp-server-pool";
@@ -46,9 +48,11 @@ export const mcpServersImplementations = {
         return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
       }
 
-      // Determine user ownership based on input.user_id or default to current user
-      const effectiveUserId =
-        input.user_id !== undefined ? input.user_id : userId;
+      const owner = await resolveOwner(input.user_id, userId, userId);
+      if (!owner.ok) {
+        return { success: false as const, message: OWNER_ADMIN_ONLY_MESSAGE };
+      }
+      const effectiveUserId = owner.ownerId;
 
       const { oauth_client_info: oauthClientInfo, ...serverInput } = input;
 
@@ -432,9 +436,11 @@ export const mcpServersImplementations = {
         return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
       }
 
-      // Determine user ownership based on input.user_id or keep existing ownership
-      const effectiveUserId =
-        input.user_id !== undefined ? input.user_id : server.user_id;
+      const owner = await resolveOwner(input.user_id, server.user_id, userId);
+      if (!owner.ok) {
+        return { success: false as const, message: OWNER_ADMIN_ONLY_MESSAGE };
+      }
+      const effectiveUserId = owner.ownerId;
 
       const { oauth_client_info: oauthClientInfo, ...serverInput } = input;
 
