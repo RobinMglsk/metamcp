@@ -15,6 +15,11 @@ if (!process.env.APP_URL) {
   throw new Error("APP_URL environment variable is required");
 }
 
+const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+function resolveLogLevel(raw: string | undefined) {
+  return LOG_LEVELS.find((l) => l === raw) ?? "warn";
+}
+
 const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
 const BETTER_AUTH_URL = process.env.APP_URL;
 
@@ -103,14 +108,25 @@ export const auth = betterAuth({
   account: {
     accountLinking: {
       enabled: true,
-      // Allow linking accounts with the same email address
+      // Never link a provider account that has a different email address
       allowDifferentEmails: false,
-      // Trusted providers for automatic linking (add your OIDC provider here)
-      trustedProviders: oidcProviders.map((p) => p.providerId),
-      // Allow automatic linking for same email addresses
-      allowSameEmail: true,
-      // Require email verification for account linking
-      requireEmailVerification: false,
+      // A "trusted" provider may link into an existing account even when it
+      // does not assert email_verified, i.e. anyone who can register the
+      // victim's address at the identity provider could take over a local
+      // account with that email (including a bootstrapped admin). Providers are
+      // therefore only trusted when the operator opts in; otherwise the
+      // provider must report the email as verified for an account to be linked.
+      trustedProviders:
+        process.env.OIDC_TRUST_UNVERIFIED_EMAILS === "true"
+          ? oidcProviders.map((p) => p.providerId)
+          : [],
+      // Only link into a local account whose email has been verified, so that
+      // someone who pre-registers a victim's email with a password cannot take
+      // over the account when the victim later signs in through SSO. (This is
+      // Better Auth's default; it is stated explicitly so it cannot silently
+      // regress. The old allowSameEmail / requireEmailVerification options
+      // are not part of Better Auth 1.7 and did nothing.)
+      requireLocalEmailVerified: true,
     },
   },
   session: {
@@ -141,16 +157,22 @@ export const auth = betterAuth({
       emailVerified: {
         type: "boolean",
         defaultValue: false,
+        input: false, // never settable by the client
       },
     },
   },
   advanced: {
-    crossSubDomainCookies: {
-      enabled: true,
-    },
+    // Only the Better Auth client IP is taken from X-Forwarded-For, and the
+    // backend overwrites that header with the IP Express resolved from its
+    // trusted proxies (see index.ts), so it cannot be spoofed by clients.
+    ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
+    // Sharing the session cookie with sibling subdomains is opt-in
+    ...(process.env.BETTER_AUTH_CROSS_SUBDOMAIN_COOKIES === "true"
+      ? { crossSubDomainCookies: { enabled: true } }
+      : {}),
   },
   logger: {
-    level: "debug", // Enable debug logging
+    level: resolveLogLevel(process.env.BETTER_AUTH_LOG_LEVEL),
   },
   databaseHooks: {
     user: {
