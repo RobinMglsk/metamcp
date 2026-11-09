@@ -21,6 +21,18 @@ export interface BodyLimitOptions {
  * server buffer tens of megabytes), and a larger one for tRPC only after a
  * session was verified. Replaces a blanket 50 MB limit applied before
  * authentication.
+ *
+ * Notes:
+ * - `/metamcp/` and `/mcp-proxy/` are skipped here; the OpenAPI tool route
+ *   (`POST /metamcp/:endpoint/api/:tool`) parses its own body with a route-level
+ *   `express.json()` (routers/public-metamcp/openapi/routes.ts), i.e. the express
+ *   default of 100 KB. Tool-call arguments above that are rejected with 413.
+ * - Only tRPC accepts the larger limit, and callers are browser sessions
+ *   (cookies); API keys / bearer tokens are not used against tRPC.
+ * - Chunked bodies carry no Content-Length, so the limit is enforced by the
+ *   parser while streaming rather than up front.
+ * - Large tRPC bodies cost one session lookup each; it is cheap relative to a
+ *   multi-MB parse, so no cache is kept.
  */
 /**
  * Resolves MAX_TRPC_BODY_BYTES: a positive integer not below the default limit

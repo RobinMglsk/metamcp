@@ -8,15 +8,59 @@ import { z } from "zod";
 
 import logger from "@/utils/logger";
 
-import { toolsRepository } from "../db/repositories";
+import { mcpServersRepository, toolsRepository } from "../db/repositories";
 import { ToolsSerializer } from "../db/serializers";
+import { canMutate } from "../lib/authz";
 import { toolsSyncCache } from "../lib/metamcp/tools-sync-cache";
+
+// SECURITY: `toolsImplementations` is what the tRPC router and the admin MCP
+// tools call, and every function in it checks access to the server.
+// `syncDiscoveredTools` (below) deliberately does NOT: it is for trusted
+// internal callers only (the proxy syncing tools it just discovered from a
+// server it is connected to) and must never be exposed through a router, an
+// MCP tool or any other user-reachable path.
+
+// The tools of a server belong to that server: reading follows the server's
+// visibility (own or shared), writing needs ownership (admin for shared).
+type ServerAccess = "ok" | "not_found" | "denied";
+const checkServerAccess = async (
+  mcpServerUuid: string,
+  userId: string,
+  write: boolean,
+): Promise<ServerAccess> => {
+  const server = await mcpServersRepository.findByUuid(mcpServerUuid);
+  if (!server) return "not_found";
+  if (write) {
+    return (await canMutate(server.user_id, userId)) ? "ok" : "denied";
+  }
+  return !server.user_id || server.user_id === userId ? "ok" : "denied";
+};
+
+// Same answer for "does not exist" and "not yours", so the response cannot be
+// used to find out whether a server UUID exists.
+const NOT_FOUND_MESSAGE = "MCP server not found";
+const accessMessage = (_access: Exclude<ServerAccess, "ok">) =>
+  NOT_FOUND_MESSAGE;
 
 export const toolsImplementations = {
   getByMcpServerUuid: async (
     input: z.infer<typeof GetToolsByMcpServerUuidRequestSchema>,
+    userId: string,
   ): Promise<z.infer<typeof GetToolsByMcpServerUuidResponseSchema>> => {
     try {
+      const access = await checkServerAccess(
+        input.mcpServerUuid,
+        userId,
+        false,
+      );
+      if (access !== "ok") {
+        return {
+          success: false as const,
+          data: [],
+          message: accessMessage(access),
+        };
+      }
+
       const tools = await toolsRepository.findByMcpServerUuid(
         input.mcpServerUuid,
       );
@@ -38,8 +82,18 @@ export const toolsImplementations = {
 
   create: async (
     input: z.infer<typeof CreateToolRequestSchema>,
+    userId: string,
   ): Promise<z.infer<typeof CreateToolResponseSchema>> => {
     try {
+      const access = await checkServerAccess(input.mcpServerUuid, userId, true);
+      if (access !== "ok") {
+        return {
+          success: false as const,
+          count: 0,
+          error: accessMessage(access),
+        };
+      }
+
       if (!input.tools || input.tools.length === 0) {
         return {
           success: true as const,
@@ -69,62 +123,83 @@ export const toolsImplementations = {
   },
 
   /**
-   * Smart sync with hash-check and cleanup
-   * Only syncs if tools have actually changed (performance optimized)
+   * Smart sync with hash-check and cleanup: only syncs if the tools changed.
+   * Requires ownership of the server (admin for shared servers).
    */
   sync: async (
     input: z.infer<typeof CreateToolRequestSchema>,
+    userId: string,
   ): Promise<z.infer<typeof CreateToolResponseSchema>> => {
-    try {
-      if (!input.tools || input.tools.length === 0) {
-        return {
-          success: true as const,
-          count: 0,
-          message: "No tools to sync",
-        };
-      }
-
-      // Check if tools changed using hash
-      const toolNames = input.tools.map((tool) => tool.name);
-      const hasChanged = toolsSyncCache.hasChanged(
-        input.mcpServerUuid,
-        toolNames,
-      );
-
-      if (hasChanged) {
-        // Update cache
-        toolsSyncCache.update(input.mcpServerUuid, toolNames);
-
-        // Perform sync with cleanup
-        const { upserted, deleted } = await toolsRepository.syncTools({
-          tools: input.tools,
-          mcpServerUuid: input.mcpServerUuid,
-        });
-
-        const message =
-          deleted.length > 0
-            ? `Successfully synced ${upserted.length} tools (removed ${deleted.length} obsolete)`
-            : `Successfully synced ${upserted.length} tools`;
-
-        return {
-          success: true as const,
-          count: upserted.length,
-          message,
-        };
-      } else {
-        return {
-          success: true as const,
-          count: input.tools.length,
-          message: "Tools unchanged, skipped sync",
-        };
-      }
-    } catch (error) {
-      console.error("Error syncing tools to database:", error);
+    const access = await checkServerAccess(input.mcpServerUuid, userId, true);
+    if (access !== "ok") {
       return {
         success: false as const,
         count: 0,
-        error: error instanceof Error ? error.message : "Internal server error",
+        error: accessMessage(access),
       };
     }
+    return syncDiscoveredTools(input);
   },
+};
+
+/**
+ * Trusted internal entry point (no per-user access check): used by the proxy
+ * when it syncs tools it just discovered from a server it is connected to.
+ * User-facing callers must go through `toolsImplementations.sync`.
+ */
+export const syncDiscoveredTools = async (
+  input: z.infer<typeof CreateToolRequestSchema>,
+): Promise<z.infer<typeof CreateToolResponseSchema>> => {
+  try {
+    if (!input.tools || input.tools.length === 0) {
+      return {
+        success: true as const,
+        count: 0,
+        message: "No tools to sync",
+      };
+    }
+
+    // Check if tools changed using hash
+    const toolNames = input.tools.map((tool) => tool.name);
+    const hasChanged = toolsSyncCache.hasChanged(
+      input.mcpServerUuid,
+      toolNames,
+    );
+
+    if (hasChanged) {
+      // Perform sync with cleanup
+      const { upserted, deleted } = await toolsRepository.syncTools({
+        tools: input.tools,
+        mcpServerUuid: input.mcpServerUuid,
+      });
+
+      // Only remember the new tool list once it is stored: if the write fails,
+      // the next sync must not be skipped as "unchanged"
+      toolsSyncCache.update(input.mcpServerUuid, toolNames);
+
+      const message =
+        deleted.length > 0
+          ? `Successfully synced ${upserted.length} tools (removed ${deleted.length} obsolete)`
+          : `Successfully synced ${upserted.length} tools`;
+
+      return {
+        success: true as const,
+        count: upserted.length,
+        message,
+      };
+    } else {
+      return {
+        success: true as const,
+        count: input.tools.length,
+        message: "Tools unchanged, skipped sync",
+      };
+    }
+  } catch (error) {
+    console.error("Error syncing tools to database:", error);
+    return {
+      success: false as const,
+      count: 0,
+      error: error instanceof Error ? error.message : "Internal server error",
+    };
+  }
 };

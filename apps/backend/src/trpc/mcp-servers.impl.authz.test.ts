@@ -7,11 +7,14 @@ const mocks = vi.hoisted(() => ({
   findByUuid: vi.fn(),
   update: vi.fn(),
   checkMcpServerUrl: vi.fn(),
+  resolveOwner: vi.fn(),
 }));
 
 vi.mock("../lib/authz", () => ({
   isAdmin: mocks.isAdmin,
   canMutate: vi.fn().mockResolvedValue(true),
+  OWNER_ADMIN_ONLY_MESSAGE: "owner admin only",
+  resolveOwner: mocks.resolveOwner,
   STDIO_ADMIN_ONLY_MESSAGE: "stdio admin only",
 }));
 vi.mock("../lib/server-url-policy", () => ({
@@ -62,6 +65,10 @@ const sseInput = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.checkMcpServerUrl.mockResolvedValue(null);
+  mocks.resolveOwner.mockImplementation(async (requested, current) => ({
+    ok: true,
+    ownerId: requested === undefined ? current : requested,
+  }));
   mocks.create.mockResolvedValue({
     uuid: "u1",
     name: "n",
@@ -162,5 +169,29 @@ describe("server URL policy", () => {
     const inserted = mocks.bulkCreate.mock.calls[0][0];
     expect(inserted.map((s: { name: string }) => s.name)).toEqual(["good"]);
     expect(JSON.stringify(res)).toContain("metadata");
+  });
+});
+
+describe("owner selection", () => {
+  it("create: rejects when the owner cannot be resolved (non-admin asking for shared)", async () => {
+    mocks.resolveOwner.mockResolvedValue({ ok: false });
+    const res = await impl.create(
+      { ...sseInput, user_id: null } as never,
+      "user-1",
+    );
+    expect(res).toMatchObject({ success: false, message: "owner admin only" });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.resolveOwner).toHaveBeenCalledWith(null, "user-1", "user-1");
+  });
+
+  it("create: stores the resolved owner, not the raw input", async () => {
+    mocks.resolveOwner.mockResolvedValue({ ok: true, ownerId: "user-1" });
+    await impl.create(
+      { ...sseInput, user_id: "someone-else" } as never,
+      "user-1",
+    );
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: "user-1" }),
+    );
   });
 });
