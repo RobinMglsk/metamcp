@@ -2,7 +2,7 @@
 
 import { CreateApiKeyFormSchema } from "@repo/zod-types";
 import { format } from "date-fns";
-import { Copy, Eye, EyeOff, Key, Plus, Trash2 } from "lucide-react";
+import { Copy, Key, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -55,7 +55,6 @@ type CreateApiKeyFormData = z.infer<typeof CreateApiKeyFormSchema>;
 export default function ApiKeysPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [apiKeyToDelete, setApiKeyToDelete] = useState<{
     uuid: string;
@@ -114,22 +113,6 @@ export default function ApiKeysPage() {
     toast.success(t("api-keys:copyToClipboard"));
   };
 
-  const toggleKeyVisibility = (uuid: string) => {
-    setVisibleKeys((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(uuid)) {
-        newSet.delete(uuid);
-      } else {
-        newSet.add(uuid);
-      }
-      return newSet;
-    });
-  };
-
-  const maskKey = (key: string) => {
-    return "•".repeat(key.length);
-  };
-
   const handleDeleteClick = (apiKey: { uuid: string; name: string }) => {
     setApiKeyToDelete(apiKey);
     setDeleteDialogOpen(true);
@@ -165,7 +148,12 @@ export default function ApiKeysPage() {
               {t("api-keys:createApiKey")}
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent
+            // The new key is shown only once: no dismissing by a stray click
+            onInteractOutside={(e) => {
+              if (newApiKey) e.preventDefault();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>{t("api-keys:createApiKey")}</DialogTitle>
               <DialogDescription>
@@ -177,6 +165,12 @@ export default function ApiKeysPage() {
                 <div className="p-4 bg-muted rounded-lg">
                   <p className="text-sm font-medium mb-2">
                     {t("api-keys:newApiKey")}
+                  </p>
+                  <p
+                    role="alert"
+                    className="text-sm text-amber-700 dark:text-amber-400 mb-2"
+                  >
+                    {t("api-keys:newApiKeyWarning")}
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 p-2 bg-background rounded border text-sm font-mono break-all">
@@ -310,37 +304,10 @@ export default function ApiKeysPage() {
                 <TableRow key={apiKey.uuid}>
                   <TableCell className="font-medium">{apiKey.name}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm font-mono break-all">
-                        {visibleKeys.has(apiKey.uuid)
-                          ? apiKey.key
-                          : maskKey(apiKey.key)}
-                      </code>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => toggleKeyVisibility(apiKey.uuid)}
-                        title={
-                          visibleKeys.has(apiKey.uuid)
-                            ? t("api-keys:hideApiKey")
-                            : t("api-keys:showApiKey")
-                        }
-                      >
-                        {visibleKeys.has(apiKey.uuid) ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => copyToClipboard(apiKey.key)}
-                        title={t("api-keys:copyFullApiKey")}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {/* Keys are stored hashed: only a prefix can be shown */}
+                    <code className="text-sm font-mono break-all">
+                      {apiKey.key}
+                    </code>
                   </TableCell>
                   <TableCell>
                     {format(new Date(apiKey.created_at), "MMM d, yyyy")}

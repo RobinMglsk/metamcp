@@ -142,10 +142,10 @@
     "shttpUrlCopied": "URL Streamable HTTP copiada al portapapeles",
     "openApiUrlCopied": "URL OpenAPI copiada al portapapeles",
     "openApiSchemaUrlCopied": "URL del Schema OpenAPI copiada al portapapeles",
-    "sseUrlWithApiKeyCopied": "URL SSE con parámetro de API key copiada al portapapeles",
-    "shttpUrlWithApiKeyCopied": "URL SHTTP con parámetro de API key copiada al portapapeles",
-    "openApiUrlWithApiKeyCopied": "URL OpenAPI con parámetro de API key copiada al portapapeles",
-    "openApiSchemaUrlWithApiKeyCopied": "URL del Schema OpenAPI con parámetro de API key copiada al portapapeles",
+    "sseUrlWithApiKeyCopied": "URL SSE con parámetro de API key copiada al portapapeles. Sustituye YOUR_API_KEY por tu clave de API.",
+    "shttpUrlWithApiKeyCopied": "URL SHTTP con parámetro de API key copiada al portapapeles. Sustituye YOUR_API_KEY por tu clave de API.",
+    "openApiUrlWithApiKeyCopied": "URL OpenAPI con parámetro de API key copiada al portapapeles. Sustituye YOUR_API_KEY por tu clave de API.",
+    "openApiSchemaUrlWithApiKeyCopied": "URL del Schema OpenAPI con parámetro de API key copiada al portapapeles. Sustituye YOUR_API_KEY por tu clave de API.",
     "noResults": "Sin resultados."
   }
 }

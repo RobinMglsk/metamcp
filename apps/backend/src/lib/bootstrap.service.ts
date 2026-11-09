@@ -13,6 +13,7 @@ import {
   namespacesTable,
   usersTable,
 } from "../db/schema";
+import { apiKeyPrefix, hashApiKey, sha256Hex } from "./api-key-hash";
 
 /**
  * Environment-based bootstrap for MetaMCP.
@@ -30,6 +31,7 @@ type ApiKeyConfig = {
   is_public?: boolean;
   user_email?: string; // Email of user who owns this key (for private keys)
   owner?: string; // Alias for user_email
+  key?: string; // Optional key value (>= 32 chars); only its hash is stored and it is never logged
 };
 
 type NamespaceConfig = {
@@ -99,18 +101,10 @@ function nonEmpty(value: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
+const MIN_BOOTSTRAP_KEY_LENGTH = 32;
+
 function generateApiKey(): string {
   return `sk_mt_${crypto.randomBytes(32).toString("hex")}`; // 64 hex chars
-}
-
-function maskKey(key: string): string {
-  if (!key) return "";
-  if (key.length <= 14) return `${key.slice(0, 6)}…`;
-  return `${key.slice(0, 10)}…${key.slice(-4)}`;
-}
-
-function sha256Hex(input: string): string {
-  return crypto.createHash("sha256").update(input, "utf8").digest("hex");
 }
 
 function parseJsonArray<T>(envVar: string | undefined, defaultValue: T[]): T[] {
@@ -350,7 +344,8 @@ async function ensureUser(
   );
 
   let preservedUserApiKeys:
-    { name: string; key: string; is_active: boolean }[] | undefined;
+    | { name: string; key: string; key_prefix: string; is_active: boolean }[]
+    | undefined;
 
   let recreated = false;
 
@@ -366,6 +361,7 @@ async function ensureUser(
           .select({
             name: apiKeysTable.name,
             key: apiKeysTable.key,
+            key_prefix: apiKeysTable.key_prefix,
             is_active: apiKeysTable.is_active,
           })
           .from(apiKeysTable)
@@ -457,13 +453,18 @@ async function ensureUser(
           .insert(apiKeysTable)
           .values({
             name: k.name,
-            key: k.key,
+            key: k.key, // already the stored hash
+            key_prefix: k.key_prefix,
             user_id: user.id,
             is_active: k.is_active,
           })
           .onConflictDoUpdate({
             target: [apiKeysTable.user_id, apiKeysTable.name],
-            set: { key: k.key, is_active: k.is_active },
+            set: {
+              key: k.key,
+              key_prefix: k.key_prefix,
+              is_active: k.is_active,
+            },
           });
       } catch (err) {
         console.warn(
@@ -602,10 +603,31 @@ async function bootstrapApiKeys(
       });
 
       if (!existing) {
-        const key = generateApiKey();
+        // The key can be supplied by the operator (never logged), or is generated
+        // and printed once; only its hash is stored either way.
+        const supplied = nonEmpty(apiKeyConfig.key);
+        if (
+          supplied !== undefined &&
+          supplied.length < MIN_BOOTSTRAP_KEY_LENGTH
+        ) {
+          console.warn(
+            `⚠️ Skipping API key "${name}": the supplied "key" must be at least ${MIN_BOOTSTRAP_KEY_LENGTH} characters`,
+          );
+          continue;
+        }
+        const printGenerated =
+          process.env.BOOTSTRAP_LOG_GENERATED_API_KEYS !== "false";
+        if (supplied === undefined && !printGenerated) {
+          console.warn(
+            `⚠️ Skipping API key "${name}": it has no "key" and BOOTSTRAP_LOG_GENERATED_API_KEYS=false, so a generated key could never be retrieved`,
+          );
+          continue;
+        }
+        const key = supplied ?? generateApiKey();
         await db.insert(apiKeysTable).values({
           name,
-          key,
+          key: hashApiKey(key),
+          key_prefix: apiKeyPrefix(key),
           user_id: userId,
           is_active: true,
         });
@@ -613,15 +635,24 @@ async function bootstrapApiKeys(
         const ownerInfo = userId
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`
           : "(public)";
-        console.log(
-          `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${maskKey(key)}`,
-        );
+        if (supplied !== undefined) {
+          console.log(
+            `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo} from the supplied key (${apiKeyPrefix(key)}…)`,
+          );
+        } else {
+          console.log(
+            `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${key}`,
+          );
+          console.log(
+            '  ↳ Only a hash of this key is stored: copy it now, it cannot be shown again. Treat this log line as a secret, or supply the key yourself with "key" in BOOTSTRAP_API_KEYS.',
+          );
+        }
       } else {
         const ownerInfo = userId
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`
           : "(public)";
         console.log(
-          `✓ ${isPublic ? "Public" : "Private"} API key "${name}" ${ownerInfo} already exists: ${maskKey(existing.key)}`,
+          `✓ ${isPublic ? "Public" : "Private"} API key "${name}" ${ownerInfo} already exists: ${existing.key_prefix}…`,
         );
       }
     } catch (err) {
