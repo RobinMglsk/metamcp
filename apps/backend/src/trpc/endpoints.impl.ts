@@ -18,7 +18,12 @@ import {
   namespacesRepository,
 } from "../db/repositories";
 import { EndpointsSerializer } from "../db/serializers";
-import { canMutate, denyMessage } from "../lib/authz";
+import {
+  canMutate,
+  denyMessage,
+  OWNER_ADMIN_ONLY_MESSAGE,
+  resolveOwner,
+} from "../lib/authz";
 
 const apiKeysRepository = new ApiKeysRepository();
 
@@ -37,9 +42,11 @@ export const endpointsImplementations = {
         };
       }
 
-      // Determine user ownership based on input.user_id or default to current user
-      const effectiveUserId =
-        input.user_id !== undefined ? input.user_id : userId;
+      const owner = await resolveOwner(input.user_id, userId, userId);
+      if (!owner.ok) {
+        return { success: false as const, message: OWNER_ADMIN_ONLY_MESSAGE };
+      }
+      const effectiveUserId = owner.ownerId;
       const isPublicEndpoint = effectiveUserId === null;
 
       // Validate namespace accessibility and relationship rules
