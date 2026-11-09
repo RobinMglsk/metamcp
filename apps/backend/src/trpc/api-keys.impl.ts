@@ -16,6 +16,10 @@ import logger from "@/utils/logger";
 import { ApiKeysRepository } from "../db/repositories";
 import { ApiKeysSerializer } from "../db/serializers";
 import { isAdmin, OWNER_ADMIN_ONLY_MESSAGE, resolveOwner } from "../lib/authz";
+import {
+  isReservedKeyName,
+  RESERVED_KEY_NAME_MESSAGE,
+} from "../lib/reserved-key-names";
 
 const apiKeysRepository = new ApiKeysRepository();
 
@@ -25,6 +29,9 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof CreateApiKeyResponseSchema>> => {
     try {
+      if (isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
       const owner = await resolveOwner(input.user_id, userId, userId);
       if (!owner.ok) throw new Error(OWNER_ADMIN_ONLY_MESSAGE);
       const apiKeyUserId = owner.ownerId;
@@ -73,6 +80,9 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof UpdateApiKeyResponseSchema>> => {
     try {
+      if (input.name && isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
       const result = await apiKeysRepository.update(
         input.uuid,
         userId,

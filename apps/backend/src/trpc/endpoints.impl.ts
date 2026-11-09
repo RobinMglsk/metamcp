@@ -24,6 +24,7 @@ import {
   OWNER_ADMIN_ONLY_MESSAGE,
   resolveOwner,
 } from "../lib/authz";
+import { autoKeyName } from "../lib/reserved-key-names";
 
 const apiKeysRepository = new ApiKeysRepository();
 
@@ -99,6 +100,7 @@ export const endpointsImplementations = {
 
       // Create MCP server if requested
       if (input.createMcpServer) {
+        let createdAutoKey = false;
         try {
           const mcpServerName = `${input.name}-endpoint`;
           const mcpServerDescription = `Auto-generated MCP server for endpoint "${input.name}"`;
@@ -106,24 +108,21 @@ export const endpointsImplementations = {
           const baseUrl = process.env.APP_URL;
           const endpointUrl = `${baseUrl}/metamcp/${input.name}/mcp`;
 
-          // Get or create API key for bearer token only if API key auth is enabled
+          // Bearer token for the server, only if API key auth is enabled.
+          // Keys are stored hashed, so an existing key cannot be reused: the
+          // auto-generated MCP server gets its own dedicated key, named after
+          // the endpoint's uuid (unique even when an endpoint name is reused)
+          // and removed again when the endpoint is deleted.
           let bearerToken = "";
           if (input.enableApiKeyAuth) {
             try {
-              const userApiKeys = await apiKeysRepository.findByUserId(userId);
-              const activeApiKey = userApiKeys.find((key) => key.is_active);
-
-              if (activeApiKey) {
-                bearerToken = activeApiKey.key;
-              } else {
-                // Create a new API key if none exists
-                const newApiKey = await apiKeysRepository.create({
-                  name: "Auto-generated for MCP Server",
-                  user_id: userId,
-                  is_active: true,
-                });
-                bearerToken = newApiKey.key;
-              }
+              const newApiKey = await apiKeysRepository.create({
+                name: autoKeyName(result.uuid),
+                user_id: userId,
+                is_active: true,
+              });
+              bearerToken = newApiKey.key;
+              createdAutoKey = true;
             } catch (apiKeyError) {
               logger.error(
                 "Error getting API key for MCP server:",
@@ -145,6 +144,12 @@ export const endpointsImplementations = {
             user_id: effectiveUserId,
           });
         } catch (mcpError) {
+          if (createdAutoKey) {
+            // Do not leave an unused active key behind
+            await apiKeysRepository
+              .deleteByName(autoKeyName(result.uuid))
+              .catch((e) => logger.error("Error removing unused API key:", e));
+          }
           logger.error("Error creating MCP server:", mcpError);
           // Don't fail the endpoint creation if MCP server creation fails
           // Just log the error and continue
@@ -269,6 +274,11 @@ export const endpointsImplementations = {
           message: "Endpoint not found",
         };
       }
+
+      // Remove the key that was generated for this endpoint's MCP server
+      await apiKeysRepository
+        .deleteByName(autoKeyName(input.uuid))
+        .catch((e) => logger.error("Error removing endpoint API key:", e));
 
       return {
         success: true as const,

@@ -31,7 +31,5 @@
   "private": "비공개",
   "public": "공개",
   "ownershipDescription": "비공개 API Key는 본인만 볼 수 있습니다. 공개 API Key는 누구나 사용할 수 있습니다.",
-  "hideApiKey": "API Key 숨기기",
-  "showApiKey": "API Key 표시",
-  "copyFullApiKey": "전체 API Key 복사"
+  "newApiKeyWarning": "지금 이 키를 복사하세요. 해시로 저장되며 다시 표시되지 않습니다."
 }

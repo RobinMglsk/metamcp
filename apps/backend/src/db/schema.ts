@@ -398,7 +398,10 @@ export const apiKeysTable = pgTable(
   {
     uuid: uuid("uuid").primaryKey().defaultRandom(),
     name: text("name").notNull(),
+    // SHA-256 hex of the API key (the plaintext key is never stored)
     key: text("key").notNull().unique(),
+    // First characters of the key, shown in the UI to tell keys apart
+    key_prefix: text("key_prefix").notNull().default(""),
     user_id: text("user_id").references(() => usersTable.id, {
       onDelete: "cascade",
     }),

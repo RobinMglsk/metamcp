@@ -54,6 +54,11 @@ export const OWNER_ADMIN_ONLY_MESSAGE =
  * Resolves the owner of a resource from the caller-supplied `user_id`.
  * `undefined` keeps `current` (the caller on create, the existing owner on
  * update). Anything else - null (shared) or another user - is administrator-only.
+ *
+ * On update paths call `canMutate` on the existing owner first and this second:
+ * the former decides whether the caller may touch the row at all, this one
+ * whether they may hand it to a different owner. Reversing the order would let a
+ * non-owner probe ownership rules on rows they cannot modify.
  */
 export async function resolveOwner(
   requested: string | null | undefined,
