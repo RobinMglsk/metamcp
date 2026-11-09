@@ -6,7 +6,7 @@ import {
   OAuthClient,
   OAuthClientCreateInput,
 } from "@repo/zod-types";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, type SQL } from "drizzle-orm";
 
 import { sha256Hex } from "../../lib/secret-hash";
 import { db } from "../index";
@@ -15,6 +15,9 @@ import {
   oauthAuthorizationCodesTable,
   oauthClientsTable,
 } from "../schema";
+
+const ACCESS_TOKEN_PREFIX = "mcp_token_";
+const REFRESH_TOKEN_PREFIX = "mcp_refresh_";
 
 export class OAuthRepository {
   // ===== Registered Clients =====
@@ -94,7 +97,18 @@ export class OAuthRepository {
       .from(oauthAccessTokensTable)
       .where(eq(oauthAccessTokensTable.access_token, sha256Hex(token)))
       .limit(1);
-    return result[0] || null;
+    if (result[0]) return result[0];
+
+    // A token issued before hashing was introduced is stored in plaintext.
+    // Honour it (so deploying does not sign everyone out) and hash it in place.
+    // Only well-formed tokens are looked up in plaintext: a stored hash is
+    // plain hex and can never be presented as a token.
+    if (token.startsWith(ACCESS_TOKEN_PREFIX)) {
+      return this.upgradeLegacyRow(
+        eq(oauthAccessTokensTable.access_token, token),
+      );
+    }
+    return null;
   }
 
   async setAccessToken(
@@ -136,7 +150,57 @@ export class OAuthRepository {
       .from(oauthAccessTokensTable)
       .where(eq(oauthAccessTokensTable.refresh_token, sha256Hex(refreshToken)))
       .limit(1);
-    return result[0] || null;
+    if (result[0]) return result[0];
+
+    if (refreshToken.startsWith(REFRESH_TOKEN_PREFIX)) {
+      return this.upgradeLegacyRow(
+        eq(oauthAccessTokensTable.refresh_token, refreshToken),
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Finds a token row that still holds plaintext values (issued before hashing)
+   * and converts its access and refresh tokens to their hashes. Returns the
+   * row in its hashed form.
+   */
+  private async upgradeLegacyRow(
+    where: SQL | undefined,
+  ): Promise<OAuthAccessToken | null> {
+    const [row] = await db
+      .select()
+      .from(oauthAccessTokensTable)
+      .where(where)
+      .limit(1);
+    if (!row) return null;
+
+    const upgraded = {
+      access_token: row.access_token.startsWith(ACCESS_TOKEN_PREFIX)
+        ? sha256Hex(row.access_token)
+        : row.access_token,
+      refresh_token: row.refresh_token?.startsWith(REFRESH_TOKEN_PREFIX)
+        ? sha256Hex(row.refresh_token)
+        : row.refresh_token,
+    };
+    await db
+      .update(oauthAccessTokensTable)
+      .set(upgraded)
+      .where(eq(oauthAccessTokensTable.access_token, row.access_token));
+    return { ...row, ...upgraded };
+  }
+
+  // ===== Client secrets =====
+
+  /** Replaces a legacy plaintext client secret by its stored (hashed) form. */
+  async upgradeClientSecret(
+    clientId: string,
+    hashedSecret: string,
+  ): Promise<void> {
+    await db
+      .update(oauthClientsTable)
+      .set({ client_secret: hashedSecret })
+      .where(eq(oauthClientsTable.client_id, clientId));
   }
 
   // ===== Cleanup =====
