@@ -14,6 +14,7 @@ import { isUpstreamUnauthorizedError } from "../oauth-upstream/token-exchange";
 import { ProcessManagedStdioTransport } from "../stdio-transport/process-managed-transport";
 import { metamcpLogStore } from "./log-store";
 import { serverErrorTracker } from "./server-error-tracker";
+import { upstreamFetchFor } from "./upstream-fetch";
 import { resolveEnvVariables } from "./utils";
 
 const sleep = (time: number) =>
@@ -43,6 +44,9 @@ export const createMetaMcpClient = (
   serverParams: ServerParameters,
 ): { client: Client | undefined; transport: Transport | undefined } => {
   let transport: Transport | undefined;
+  // Everything sent to the upstream goes through the guarded fetch, evaluated
+  // with the server owner's outbound policy (see upstream-fetch.ts)
+  const upstreamFetch = upstreamFetchFor(serverParams.uuid);
 
   // Create the appropriate transport based on server type
   // Default to "STDIO" if type is undefined
@@ -100,15 +104,19 @@ export const createMetaMcpClient = (
     const hasHeaders = Object.keys(headers).length > 0;
 
     if (!hasHeaders) {
-      transport = new SSEClientTransport(new URL(transformedUrl));
+      transport = new SSEClientTransport(new URL(transformedUrl), {
+        fetch: upstreamFetch,
+        eventSourceInit: { fetch: upstreamFetch },
+      });
     } else {
       transport = new SSEClientTransport(new URL(transformedUrl), {
         requestInit: {
           headers,
         },
         eventSourceInit: {
-          fetch: (url, init) => fetch(url, { ...init, headers }),
+          fetch: (url, init) => upstreamFetch(url, { ...init, headers }),
         },
+        fetch: upstreamFetch,
       });
     }
   } else if (serverParams.type === "STREAMABLE_HTTP" && serverParams.url) {
@@ -130,12 +138,15 @@ export const createMetaMcpClient = (
     const hasHeaders = Object.keys(headers).length > 0;
 
     if (!hasHeaders) {
-      transport = new StreamableHTTPClientTransport(new URL(transformedUrl));
+      transport = new StreamableHTTPClientTransport(new URL(transformedUrl), {
+        fetch: upstreamFetch,
+      });
     } else {
       transport = new StreamableHTTPClientTransport(new URL(transformedUrl), {
         requestInit: {
           headers,
         },
+        fetch: upstreamFetch,
       });
     }
   } else {

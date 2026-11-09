@@ -19,6 +19,7 @@ import {
 } from "../db/repositories";
 import { OAuthSessionsSerializer } from "../db/serializers";
 import { canMutate, SHARED_ADMIN_ONLY_MESSAGE } from "../lib/authz";
+import { upstreamFetchFor } from "../lib/metamcp/upstream-fetch";
 import { tryRefreshUpstreamTokens } from "../lib/oauth-upstream/refresh-on-401";
 import {
   discoverAuthorizationServerMetadata,
@@ -311,7 +312,13 @@ export const oauthImplementations = {
         ? (clientInformation.client_secret as string)
         : undefined;
 
-    const discovered = await discoverAuthorizationServerMetadata(serverUrl);
+    const upstreamFetch = upstreamFetchFor(
+      input.mcp_server_uuid,
+    ) as unknown as typeof fetch;
+    const discovered = await discoverAuthorizationServerMetadata(
+      serverUrl,
+      upstreamFetch,
+    );
     const tokenEndpoint = resolveTokenEndpoint({
       clientInformation,
       discovered,
@@ -341,6 +348,7 @@ export const oauthImplementations = {
         clientId,
         clientSecret,
         authMethod,
+        fetchImpl: upstreamFetch,
       });
     } catch (error) {
       if (error instanceof UpstreamTokenError) {

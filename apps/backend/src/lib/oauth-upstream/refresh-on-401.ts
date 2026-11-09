@@ -24,6 +24,7 @@ import { ServerParameters } from "@repo/zod-types";
 
 import { oauthSessionsRepository } from "../../db/repositories";
 import logger from "../../utils/logger";
+import { upstreamFetchFor } from "../metamcp/upstream-fetch";
 import {
   discoverAuthorizationServerMetadata,
   OAuthTokens,
@@ -112,8 +113,12 @@ async function doRefresh(
       ? (clientInformation.client_secret as string)
       : undefined;
 
+  const upstreamFetch = upstreamFetchFor(
+    serverParams.uuid,
+  ) as unknown as typeof fetch;
   const discovered = await discoverAuthorizationServerMetadata(
     serverParams.url,
+    upstreamFetch,
   );
   const tokenEndpoint = resolveTokenEndpoint({
     clientInformation,
@@ -145,6 +150,7 @@ async function doRefresh(
         typeof currentTokens.scope === "string"
           ? currentTokens.scope
           : undefined,
+      fetchImpl: upstreamFetch,
     });
   } catch (error) {
     if (error instanceof UpstreamTokenError) {

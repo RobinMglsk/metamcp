@@ -8,6 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // `mcpServersRepository.findByUuid` is mocked because exchange/refresh
 // resolve the upstream URL from the DB (NOT from the caller) as the SSRF
 // guard for the OAuth token-exchange path.
+// The guarded upstream fetch (undici + owner policy lookup) is covered in
+// upstream-fetch.test.ts; here the suite's own fetch stub stands in for the network.
+vi.mock("../lib/metamcp/upstream-fetch", () => ({
+  upstreamFetchFor: () => (url: string | URL, init?: RequestInit) =>
+    globalThis.fetch(url, init),
+}));
+
 vi.mock("../db/repositories", () => ({
   oauthSessionsRepository: {
     findByMcpServerUuid: vi.fn(),
