@@ -18,7 +18,9 @@ export async function getSessionFromRequest(
 ): Promise<RequestSession> {
   if (!req.headers.cookie) return {};
 
-  const url = new URL("/api/auth/get-session", `http://${req.headers.host}`);
+  // Base on the configured APP_URL, never on the client-controlled Host header:
+  // a malformed Host would make `new URL` throw and turn a request into a 500.
+  const url = new URL("/api/auth/get-session", process.env.APP_URL);
   const headers = new Headers();
   headers.set("cookie", req.headers.cookie);
   const response = await auth.handler(
