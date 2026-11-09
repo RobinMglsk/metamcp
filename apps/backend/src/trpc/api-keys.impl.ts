@@ -16,6 +16,10 @@ import logger from "@/utils/logger";
 import { ApiKeysRepository } from "../db/repositories";
 import { ApiKeysSerializer } from "../db/serializers";
 import { isAdmin } from "../lib/authz";
+import {
+  isReservedKeyName,
+  RESERVED_KEY_NAME_MESSAGE,
+} from "../lib/reserved-key-names";
 
 const apiKeysRepository = new ApiKeysRepository();
 
@@ -25,6 +29,9 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof CreateApiKeyResponseSchema>> => {
     try {
+      if (isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
       // Use input.user_id if provided, otherwise default to current user (private)
       const apiKeyUserId = input.user_id !== undefined ? input.user_id : userId;
 
@@ -72,6 +79,9 @@ export const apiKeysImplementations = {
     userId: string,
   ): Promise<z.infer<typeof UpdateApiKeyResponseSchema>> => {
     try {
+      if (input.name && isReservedKeyName(input.name)) {
+        throw new Error(RESERVED_KEY_NAME_MESSAGE);
+      }
       const result = await apiKeysRepository.update(
         input.uuid,
         userId,

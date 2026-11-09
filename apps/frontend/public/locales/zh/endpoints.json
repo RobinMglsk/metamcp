@@ -116,10 +116,10 @@
     "shttpUrlCopied": "流式 HTTP URL 已复制到剪贴板",
     "openApiUrlCopied": "OpenAPI URL 已复制到剪贴板",
     "openApiSchemaUrlCopied": "OpenAPI 架构 URL 已复制到剪贴板",
-    "sseUrlWithApiKeyCopied": "带 API 密钥参数的 SSE URL 已复制到剪贴板",
-    "shttpUrlWithApiKeyCopied": "带 API 密钥参数的 SHTTP URL 已复制到剪贴板",
-    "openApiUrlWithApiKeyCopied": "带 API 密钥参数的 OpenAPI URL 已复制到剪贴板",
-    "openApiSchemaUrlWithApiKeyCopied": "带 API 密钥参数的 OpenAPI 架构 URL 已复制到剪贴板",
+    "sseUrlWithApiKeyCopied": "带 API 密钥参数的 SSE URL 已复制到剪贴板。请将 YOUR_API_KEY 替换为您的 API 密钥。",
+    "shttpUrlWithApiKeyCopied": "带 API 密钥参数的 SHTTP URL 已复制到剪贴板。请将 YOUR_API_KEY 替换为您的 API 密钥。",
+    "openApiUrlWithApiKeyCopied": "带 API 密钥参数的 OpenAPI URL 已复制到剪贴板。请将 YOUR_API_KEY 替换为您的 API 密钥。",
+    "openApiSchemaUrlWithApiKeyCopied": "带 API 密钥参数的 OpenAPI 架构 URL 已复制到剪贴板。请将 YOUR_API_KEY 替换为您的 API 密钥。",
     "noResults": "无结果。"
   }
 }
