@@ -10,12 +10,14 @@ import logger from "./utils/logger";
 
 const app = express();
 
-// Behind the Next.js rewrite proxy (and usually nginx) every request reaches
-// the backend from loopback, so per-IP rate limits only see real client
-// addresses if forwarded headers from trusted proxies are honoured. Loopback
-// is the safe default (headers from other peers are ignored); override with
-// TRUST_PROXY (e.g. "1", "10.0.0.0/8", "false") for other topologies.
-const trustProxy = process.env.TRUST_PROXY ?? "loopback";
+// Which proxies' X-Forwarded-For to believe when deriving the client IP used by
+// the per-IP rate limiters. Default: none (req.ip is the socket peer). The
+// bundled Next.js rewrite proxy does NOT add the real client address, and any
+// X-Forwarded-For it receives is client-controlled, so trusting it by default
+// would let anyone dodge per-IP limits by changing the header. When a reverse
+// proxy such as nginx (which appends the real address) runs in front, set
+// TRUST_PROXY (e.g. "loopback", "1", "10.0.0.0/8") to match that topology.
+const trustProxy = process.env.TRUST_PROXY ?? "false";
 app.set(
   "trust proxy",
   trustProxy === "true"
