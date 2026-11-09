@@ -36,3 +36,25 @@ export async function canMutate(
 
 export const SHARED_ADMIN_ONLY_MESSAGE =
   "Access denied: only administrators can modify shared (public) resources";
+
+export const OWNER_ADMIN_ONLY_MESSAGE =
+  "Access denied: only administrators can create shared (public) resources or resources owned by another user";
+
+/**
+ * Resolves the owner of a resource from the caller-supplied `user_id`.
+ * `undefined` keeps `current` (the caller on create, the existing owner on
+ * update). Anything else - null (shared) or another user - is administrator-only.
+ */
+export async function resolveOwner(
+  requested: string | null | undefined,
+  current: string | null,
+  userId: string,
+): Promise<{ ok: true; ownerId: string | null } | { ok: false }> {
+  if (requested === undefined) return { ok: true, ownerId: current };
+  if (requested === current || requested === userId) {
+    return { ok: true, ownerId: requested };
+  }
+  return (await isAdmin(userId))
+    ? { ok: true, ownerId: requested }
+    : { ok: false };
+}

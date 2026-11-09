@@ -5,7 +5,7 @@ vi.mock("../db", () => ({
   db: { select: () => ({ from: () => ({ where: () => ({ limit }) }) }) },
 }));
 
-import { canMutate, isAdmin } from "./authz";
+import { canMutate, isAdmin, resolveOwner } from "./authz";
 import { REDACTED, redactSecrets } from "./redact";
 
 beforeEach(() => limit.mockReset());
@@ -58,5 +58,49 @@ describe("redactSecrets", () => {
     expect(redactSecrets(server, "u1", { userId: "u1", isAdmin: false })).toBe(
       server,
     );
+  });
+});
+
+describe("resolveOwner", () => {
+  it("keeps the current owner when nothing is requested", async () => {
+    expect(await resolveOwner(undefined, "me", "me")).toEqual({
+      ok: true,
+      ownerId: "me",
+    });
+    expect(await resolveOwner(undefined, null, "admin")).toEqual({
+      ok: true,
+      ownerId: null,
+    });
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it("allows explicitly choosing yourself or the unchanged owner without admin", async () => {
+    expect(await resolveOwner("me", "me", "me")).toEqual({
+      ok: true,
+      ownerId: "me",
+    });
+    expect(await resolveOwner(null, null, "me")).toEqual({
+      ok: true,
+      ownerId: null,
+    });
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admins requesting shared or another user's ownership", async () => {
+    limit.mockResolvedValue([{ role: "user" }]);
+    expect(await resolveOwner(null, "me", "me")).toEqual({ ok: false });
+    expect(await resolveOwner("victim", "me", "me")).toEqual({ ok: false });
+  });
+
+  it("lets admins pick any owner", async () => {
+    limit.mockResolvedValue([{ role: "admin" }]);
+    expect(await resolveOwner(null, "admin", "admin")).toEqual({
+      ok: true,
+      ownerId: null,
+    });
+    expect(await resolveOwner("someone", "admin", "admin")).toEqual({
+      ok: true,
+      ownerId: "someone",
+    });
   });
 });
