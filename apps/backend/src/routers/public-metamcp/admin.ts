@@ -1,14 +1,42 @@
 import express from "express";
 
-import { authenticateApiKey } from "@/middleware/api-key-oauth.middleware";
+import {
+  ApiKeyAuthenticatedRequest,
+  authenticateApiKey,
+} from "@/middleware/api-key-oauth.middleware";
 import { lookupEndpoint } from "@/middleware/lookup-endpoint-middleware";
 import logger from "@/utils/logger";
 
-import { mcpServersRepository } from "../../db/repositories";
+import {
+  mcpServersRepository,
+  namespacesRepository,
+} from "../../db/repositories";
+import { mcpServerPool } from "../../lib/metamcp/mcp-server-pool";
 import { serverErrorTracker } from "../../lib/metamcp/server-error-tracker";
-import { initializeIdleServers } from "../../lib/startup";
+import { convertDbServerToParams } from "../../lib/metamcp/utils";
+import { requireAdminPrincipal } from "../../middleware/require-admin-principal.middleware";
 
 const adminRouter = express.Router();
+
+async function respawnIdleSessions(serverUuids: string[]) {
+  for (const uuid of serverUuids) {
+    const server = await mcpServersRepository.findByUuid(uuid);
+    if (!server) continue;
+    const params = await convertDbServerToParams(server);
+    if (params) {
+      await mcpServerPool.ensureIdleSessionForNewServer(uuid, params);
+    }
+  }
+}
+
+// Only servers that belong to the endpoint's namespace may be inspected or reset
+async function getNamespaceServers(req: express.Request) {
+  const { endpoint } = req as ApiKeyAuthenticatedRequest;
+  const namespace = await namespacesRepository.findByUuidWithServers(
+    endpoint.namespace_uuid,
+  );
+  return namespace?.servers ?? [];
+}
 
 // JSON body parser for admin routes
 adminRouter.use(express.json());
@@ -20,45 +48,59 @@ adminRouter.use(express.json());
  * Optionally targets a specific server by UUID, or resets all if no UUID given.
  *
  * Body: { "serverUuid": "optional-specific-uuid" }
- * Auth: Same API key as MCP endpoints (X-API-Key header)
+ * Auth: API key (X-API-Key header) or OAuth token of an administrator
  */
 adminRouter.post(
   "/:endpoint_name/admin/reset-errors",
   lookupEndpoint,
   authenticateApiKey,
+  requireAdminPrincipal,
   async (req, res) => {
     try {
       const { serverUuid } = req.body || {};
       const resetResults: string[] = [];
+      const resetUuids: string[] = [];
+
+      const namespaceServers = await getNamespaceServers(req);
 
       if (serverUuid) {
+        if (!namespaceServers.some((s) => s.uuid === serverUuid)) {
+          return res.status(404).json({
+            success: false,
+            error: "Server not found in this endpoint's namespace",
+          });
+        }
         // Reset specific server
         await serverErrorTracker.resetServerErrorState(serverUuid);
         resetResults.push(serverUuid);
+        resetUuids.push(serverUuid);
         logger.info(`Admin API: Reset error state for server ${serverUuid}`);
       } else {
-        // Reset all servers in ERROR state
-        const allServers = await mcpServersRepository.findAll();
-        const errorServers = allServers.filter(
+        // Reset all servers of this namespace that are in ERROR state
+        const errorServers = namespaceServers.filter(
           (s) => s.error_status === "ERROR",
         );
 
         for (const server of errorServers) {
           await serverErrorTracker.resetServerErrorState(server.uuid);
           resetResults.push(server.name || server.uuid);
+          resetUuids.push(server.uuid);
         }
 
-        // Also clear all in-memory crash counters
-        serverErrorTracker.resetAllAttempts();
+        // Also clear the in-memory crash counters of those servers
+        for (const server of namespaceServers) {
+          serverErrorTracker.resetServerAttempts(server.uuid);
+        }
 
         logger.info(
           `Admin API: Reset ${resetResults.length} servers from ERROR state: ${resetResults.join(", ")}`,
         );
       }
 
-      // Trigger idle server re-initialization to respawn connections
-      // Run async — don't block the response
-      initializeIdleServers().catch((err) => {
+      // Respawn idle connections for the servers that were reset (only those:
+      // the global initializeIdleServers() also clears every other server's
+      // error state). Run async - don't block the response.
+      respawnIdleSessions(resetUuids).catch((err) => {
         logger.error("Admin API: Error re-initializing idle servers:", err);
       });
 
@@ -85,15 +127,16 @@ adminRouter.post(
 /**
  * GET /metamcp/admin/error-status
  *
- * Returns current error status of all servers (for diagnostics).
+ * Returns current error status of the servers in the endpoint's namespace (for diagnostics).
  */
 adminRouter.get(
   "/:endpoint_name/admin/error-status",
   lookupEndpoint,
   authenticateApiKey,
+  requireAdminPrincipal,
   async (req, res) => {
     try {
-      const allServers = await mcpServersRepository.findAll();
+      const allServers = await getNamespaceServers(req);
       const serverStatuses = allServers.map((s) => ({
         uuid: s.uuid,
         name: s.name,
