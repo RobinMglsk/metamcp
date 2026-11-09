@@ -132,6 +132,12 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
+      // Never settable from client input (e.g. the sign-up body)
+      role: {
+        type: "string",
+        defaultValue: "user",
+        input: false,
+      },
       emailVerified: {
         type: "boolean",
         defaultValue: false,
@@ -173,7 +179,13 @@ export const auth = betterAuth({
             }
           }
 
-          return { data: user };
+          // The first account on a fresh install becomes the administrator
+          const [existing] = await db
+            .select({ id: schema.usersTable.id })
+            .from(schema.usersTable)
+            .limit(1);
+
+          return { data: existing ? user : { ...user, role: "admin" } };
         },
       },
     },
