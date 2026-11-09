@@ -16,6 +16,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -409,11 +410,22 @@ export const apiKeysTable = pgTable(
       .notNull()
       .defaultNow(),
     is_active: boolean("is_active").notNull().default(true),
+    // NULL = never expires (every key created before expiring keys existed)
+    expires_at: timestamp("expires_at", { withTimezone: true }),
+    revoked_at: timestamp("revoked_at", { withTimezone: true }),
+    // kcw session this key was minted for (at most one live key per session)
+    session_id: text("session_id"),
+    // NULL = every endpoint the owner can reach; otherwise only these names
+    endpoint_names: text("endpoint_names").array(),
   },
   (table) => [
     index("api_keys_user_id_idx").on(table.user_id),
     index("api_keys_key_idx").on(table.key),
     index("api_keys_is_active_idx").on(table.is_active),
+    index("api_keys_expires_at_idx").on(table.expires_at),
+    uniqueIndex("api_keys_session_id_idx")
+      .on(table.session_id)
+      .where(sql`${table.session_id} IS NOT NULL AND ${table.revoked_at} IS NULL`),
     unique("api_keys_name_per_user_idx").on(table.user_id, table.name),
   ],
 );
@@ -451,11 +463,16 @@ export const mcpRequestAuditLogsTable = pgTable(
     status: mcpRequestAuditStatusEnum("status").notNull(),
     duration_ms: integer("duration_ms").notNull(),
     error_message: text("error_message"),
+    // kcw session that owned the API key (copied, so it outlives the key row)
+    kcw_session_id: text("kcw_session_id"),
     created_at: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
+    index("mcp_request_audit_logs_kcw_session_id_idx").on(
+      table.kcw_session_id,
+    ),
     index("mcp_request_audit_logs_created_at_idx").on(table.created_at),
     index("mcp_request_audit_logs_endpoint_name_idx").on(table.endpoint_name),
     index("mcp_request_audit_logs_namespace_uuid_idx").on(table.namespace_uuid),
