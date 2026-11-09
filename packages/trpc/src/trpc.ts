@@ -35,3 +35,14 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
     },
   });
 });
+
+// Requires a logged-in user with the "admin" role (global settings, logs, ...)
+export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user?.role !== "admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Administrator access required",
+    });
+  }
+  return next({ ctx });
+});

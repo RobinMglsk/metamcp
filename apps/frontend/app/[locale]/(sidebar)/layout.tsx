@@ -163,6 +163,15 @@ export default function SidebarLayout({
 }) {
   const { t, locale } = useTranslations();
   const items = getMenuItems(t, locale);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Live logs are admin-only (role is an additional field on the session user)
+  useEffect(() => {
+    authClient.getSession().then((session) => {
+      const user = session?.data?.user as { role?: string } | undefined;
+      setIsAdmin(user?.role === "admin");
+    });
+  }, []);
 
   return (
     <SidebarProvider>
@@ -197,7 +206,7 @@ export default function SidebarLayout({
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-                <LiveLogsMenuItem />
+                {isAdmin && <LiveLogsMenuItem />}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

@@ -21,3 +21,18 @@ export async function isAdmin(userId: string | undefined): Promise<boolean> {
 
 export const STDIO_ADMIN_ONLY_MESSAGE =
   "Access denied: only administrators can create or modify STDIO (command-based) MCP servers";
+
+/**
+ * Shared (user_id = null) resources may only be modified by administrators;
+ * private resources only by their owner.
+ */
+export async function canMutate(
+  ownerId: string | null | undefined,
+  userId: string,
+): Promise<boolean> {
+  if (ownerId === null || ownerId === undefined) return isAdmin(userId);
+  return ownerId === userId;
+}
+
+export const SHARED_ADMIN_ONLY_MESSAGE =
+  "Access denied: only administrators can modify shared (public) resources";

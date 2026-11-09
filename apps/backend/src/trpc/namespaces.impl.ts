@@ -28,6 +28,7 @@ import {
   toolsRepository,
 } from "../db/repositories";
 import { NamespacesSerializer } from "../db/serializers";
+import { canMutate, isAdmin } from "../lib/authz";
 import {
   clearOverrideCache,
   mapOverrideNameToOriginal,
@@ -179,6 +180,7 @@ export const namespacesImplementations = {
         success: true as const,
         data: NamespacesSerializer.serializeNamespaceWithServers(
           namespaceWithServers,
+          { userId, isAdmin: await isAdmin(userId) },
         ),
         message: "Namespace retrieved successfully",
       };
@@ -258,7 +260,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can delete, protect public namespaces)
-      if (existingNamespace.user_id && existingNamespace.user_id !== userId) {
+      if (!(await canMutate(existingNamespace.user_id, userId))) {
         return {
           success: false as const,
           message: "Access denied: You can only delete namespaces you own",
@@ -328,7 +330,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can update)
-      if (existingNamespace.user_id && existingNamespace.user_id !== userId) {
+      if (!(await canMutate(existingNamespace.user_id, userId))) {
         return {
           success: false as const,
           message: "Access denied: You can only update namespaces you own",
@@ -459,7 +461,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can update server status)
-      if (namespace.user_id && namespace.user_id !== userId) {
+      if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
           message:
@@ -546,7 +548,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can update tool status)
-      if (namespace.user_id && namespace.user_id !== userId) {
+      if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
           message:
@@ -602,7 +604,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can update tool overrides)
-      if (namespace.user_id && namespace.user_id !== userId) {
+      if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
           message:
@@ -666,7 +668,7 @@ export const namespacesImplementations = {
       }
 
       // Check if user owns this namespace (only owners can refresh tools)
-      if (namespace.user_id && namespace.user_id !== userId) {
+      if (!(await canMutate(namespace.user_id, userId))) {
         return {
           success: false as const,
           message:
