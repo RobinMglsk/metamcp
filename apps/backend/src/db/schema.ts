@@ -425,7 +425,9 @@ export const apiKeysTable = pgTable(
     index("api_keys_expires_at_idx").on(table.expires_at),
     uniqueIndex("api_keys_session_id_idx")
       .on(table.session_id)
-      .where(sql`${table.session_id} IS NOT NULL AND ${table.revoked_at} IS NULL`),
+      .where(
+        sql`${table.session_id} IS NOT NULL AND ${table.revoked_at} IS NULL`,
+      ),
     unique("api_keys_name_per_user_idx").on(table.user_id, table.name),
   ],
 );
@@ -470,9 +472,7 @@ export const mcpRequestAuditLogsTable = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("mcp_request_audit_logs_kcw_session_id_idx").on(
-      table.kcw_session_id,
-    ),
+    index("mcp_request_audit_logs_kcw_session_id_idx").on(table.kcw_session_id),
     index("mcp_request_audit_logs_created_at_idx").on(table.created_at),
     index("mcp_request_audit_logs_endpoint_name_idx").on(table.endpoint_name),
     index("mcp_request_audit_logs_namespace_uuid_idx").on(table.namespace_uuid),

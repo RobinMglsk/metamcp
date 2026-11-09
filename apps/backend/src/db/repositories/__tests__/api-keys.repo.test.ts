@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   selectResults: [] as unknown[][],
   selectShapes: [] as unknown[],
   wheres: [] as unknown[],
+  deleted: 0,
+  revokedRows: [] as unknown[],
 }));
 
 vi.mock("../../index", () => {
@@ -28,33 +30,52 @@ vi.mock("../../index", () => {
       result().then(res, rej);
     return chain;
   };
-  return {
-    db: {
-      select,
-      insert: () => ({
-        values: (v: Record<string, unknown>) => {
-          state.inserted.push(v);
-          return {
-            returning: () =>
-              Promise.resolve([
-                {
-                  uuid: "u-1",
-                  name: v.name,
-                  user_id: v.user_id ?? null,
-                  created_at: new Date(),
-                },
-              ]),
-          };
-        },
-      }),
-      update: () => ({
-        set: (v: Record<string, unknown>) => {
-          state.updated.push(v);
-          return { where: () => Promise.resolve() };
-        },
-      }),
-    },
+  const db = {
+    select,
+    insert: () => ({
+      values: (v: Record<string, unknown>) => {
+        state.inserted.push(v);
+        return {
+          returning: () =>
+            Promise.resolve([
+              {
+                uuid: "u-1",
+                name: v.name,
+                user_id: v.user_id ?? null,
+                created_at: new Date(),
+                expires_at: new Date("2030-01-01T00:00:00Z"),
+              },
+            ]),
+        };
+      },
+    }),
+    update: () => ({
+      set: (v: Record<string, unknown>) => {
+        state.updated.push(v);
+        return {
+          where: (w: unknown) => {
+            state.wheres.push(w);
+            const p = Promise.resolve() as Promise<void> & {
+              returning?: () => Promise<unknown[]>;
+            };
+            p.returning = () => Promise.resolve(state.revokedRows);
+            return p;
+          },
+        };
+      },
+    }),
+    delete: () => ({
+      where: (w: unknown) => {
+        state.wheres.push(w);
+        return {
+          returning: () =>
+            Promise.resolve(Array.from({ length: state.deleted }, () => ({}))),
+        };
+      },
+    }),
+    transaction: (fn: (tx: unknown) => unknown) => fn(db),
   };
+  return { db };
 });
 
 const { ApiKeysRepository } = await import("../api-keys.repo");
@@ -80,6 +101,8 @@ beforeEach(() => {
   state.selectResults.length = 0;
   state.selectShapes.length = 0;
   state.wheres.length = 0;
+  state.deleted = 0;
+  state.revokedRows.length = 0;
 });
 
 describe("ApiKeysRepository", () => {
@@ -144,5 +167,78 @@ describe("ApiKeysRepository", () => {
       expect(key).toBeDefined();
       expect(key).not.toBe(apiKeysTable.key);
     }
+  });
+
+  it("rejects revoked and expired keys, also when found through the legacy plaintext path", async () => {
+    const base = { uuid: "k1", user_id: "u1", is_active: true };
+    state.selectResults.push([{ ...base, revoked_at: new Date() }]);
+    expect((await repo.validateApiKey("sk_mt_a")).valid).toBe(false);
+
+    state.selectResults.push([{ ...base, expired: true }]);
+    expect((await repo.validateApiKey("sk_mt_b")).valid).toBe(false);
+
+    state.selectResults.push([], [{ ...base, expired: true }]);
+    expect((await repo.validateApiKey("sk_mt_c")).valid).toBe(false);
+
+    state.selectResults.push([{ ...base, expired: false, revoked_at: null }]);
+    expect((await repo.validateApiKey("sk_mt_d")).valid).toBe(true);
+  });
+
+  it("validateApiKey returns the session and the endpoint scope", async () => {
+    state.selectResults.push([
+      {
+        uuid: "k1",
+        user_id: null,
+        is_active: true,
+        session_id: "s1",
+        endpoint_names: ["ep"],
+      },
+    ]);
+    expect(await repo.validateApiKey("sk_mt_x")).toMatchObject({
+      valid: true,
+      session_id: "s1",
+      endpoint_names: ["ep"],
+    });
+  });
+
+  it("createSessionKey revokes the session's earlier key, then stores only the hash", async () => {
+    const r = await repo.createSessionKey({
+      session_id: "sess-1",
+      ttl_seconds: 3600,
+      user_id: null,
+      endpoint_names: ["ep"],
+    });
+
+    expect(r.key).toMatch(/^sk_mt_[0-9A-Za-z]{64}$/);
+    expect(r.key_uuid).toBe("u-1");
+    expect(r.expires_at).toBeInstanceOf(Date);
+    expect(state.updated[0]).toHaveProperty("revoked_at");
+    const row = state.inserted[0];
+    expect(row.key).toBe(hashApiKey(r.key));
+    expect(row.session_id).toBe("sess-1");
+    expect(row.endpoint_names).toEqual(["ep"]);
+    expect(String(row.name)).toMatch(/^kcw-session-sess-1-/);
+    expect(JSON.stringify(row)).not.toContain(r.key);
+  });
+
+  it("createSessionKey without a scope stores NULL endpoint_names", async () => {
+    await repo.createSessionKey({
+      session_id: "s",
+      ttl_seconds: 10,
+      user_id: "u1",
+    });
+    expect(state.inserted[0].endpoint_names).toBeNull();
+  });
+
+  it("revokeBySessionId reports whether a live key existed", async () => {
+    expect(await repo.revokeBySessionId("s")).toBe(false);
+    state.revokedRows.push({ uuid: "k" });
+    expect(await repo.revokeBySessionId("s")).toBe(true);
+    expect(paramsOf(state.wheres[0])).toContain("s");
+  });
+
+  it("deleteExpiredSessionKeys returns the number of deleted keys", async () => {
+    state.deleted = 3;
+    expect(await repo.deleteExpiredSessionKeys(new Date())).toBe(3);
   });
 });

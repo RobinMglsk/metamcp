@@ -6,8 +6,20 @@ export const AUTO_KEY_NAME_PREFIX = "Auto-generated for endpoint ";
 export const autoKeyName = (endpointUuid: string) =>
   `${AUTO_KEY_NAME_PREFIX}${endpointUuid}`;
 
-export const isReservedKeyName = (name: string) =>
-  name.trim().toLowerCase().startsWith(AUTO_KEY_NAME_PREFIX.toLowerCase());
+// Keys minted for a kcw session (see routers/kcw-keys).
+export const KCW_KEY_NAME_PREFIX = "kcw-session-";
+
+export const kcwSessionKeyName = (sessionId: string, mintId: string) =>
+  `${KCW_KEY_NAME_PREFIX}${sessionId}-${mintId}`;
+
+const RESERVED_PREFIXES = [AUTO_KEY_NAME_PREFIX, KCW_KEY_NAME_PREFIX].map((p) =>
+  p.toLowerCase(),
+);
+
+export const isReservedKeyName = (name: string) => {
+  const lower = name.trim().toLowerCase();
+  return RESERVED_PREFIXES.some((p) => lower.startsWith(p));
+};
 
 export const RESERVED_KEY_NAME_MESSAGE =
-  'API key names starting with "Auto-generated for endpoint" are reserved for the system';
+  'API key names starting with "Auto-generated for endpoint" or "kcw-session-" are reserved for the system';
