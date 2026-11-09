@@ -72,8 +72,9 @@ app.use(async (req, res, next) => {
       // from X-Forwarded-For and would take the left-most, client-controlled
       // entry. Replace it with the address Express resolved from its trusted
       // proxies so the header cannot be used to dodge per-IP limits.
-      headers.set("x-forwarded-for", req.ip ?? req.socket.remoteAddress ?? "");
-      if (!headers.get("x-forwarded-for")) headers.delete("x-forwarded-for");
+      const clientIp = req.ip ?? req.socket.remoteAddress;
+      if (clientIp) headers.set("x-forwarded-for", clientIp);
+      else headers.delete("x-forwarded-for");
 
       // Create Request object
       const request = new Request(url.toString(), {

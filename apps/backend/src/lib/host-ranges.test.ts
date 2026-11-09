@@ -27,6 +27,13 @@ describe("isPrivateOrLocalHost", () => {
     "[::ffff:127.0.0.1]",
     "::ffff:7f00:1",
     "::ffff:a9fe:a9fe",
+    "64:ff9b::a9fe:a9fe", // NAT64 of 169.254.169.254
+    "64:ff9b::7f00:1", // NAT64 of 127.0.0.1
+    "2002:a9fe:a9fe::1", // 6to4 of 169.254.169.254
+    "2002:0a00:0001::1", // 6to4 of 10.0.0.1
+    "::7f00:1", // IPv4-compatible 127.0.0.1
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2", // Teredo
+    "2001:db8::1", // documentation range
   ])("treats %s as private/local", (h) => {
     expect(isPrivateOrLocalHost(h)).toBe(true);
   });
@@ -42,6 +49,7 @@ describe("isPrivateOrLocalHost", () => {
     "100.63.0.1",
     "169.253.0.1",
     "2606:4700:4700::1111",
+    "2001:4860:4860::8888",
     "::ffff:808:808",
   ])("treats %s as public", (h) => {
     expect(isPrivateOrLocalHost(h)).toBe(false);
