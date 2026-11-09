@@ -13,6 +13,13 @@ import { ToolsSerializer } from "../db/serializers";
 import { canMutate } from "../lib/authz";
 import { toolsSyncCache } from "../lib/metamcp/tools-sync-cache";
 
+// SECURITY: `toolsImplementations` is what the tRPC router and the admin MCP
+// tools call, and every function in it checks access to the server.
+// `syncDiscoveredTools` (below) deliberately does NOT: it is for trusted
+// internal callers only (the proxy syncing tools it just discovered from a
+// server it is connected to) and must never be exposed through a router, an
+// MCP tool or any other user-reachable path.
+
 // The tools of a server belong to that server: reading follows the server's
 // visibility (own or shared), writing needs ownership (admin for shared).
 type ServerAccess = "ok" | "not_found" | "denied";
@@ -29,10 +36,11 @@ const checkServerAccess = async (
   return !server.user_id || server.user_id === userId ? "ok" : "denied";
 };
 
-const accessMessage = (access: Exclude<ServerAccess, "ok">) =>
-  access === "not_found"
-    ? "MCP server not found"
-    : "Access denied: you do not have access to this MCP server";
+// Same answer for "does not exist" and "not yours", so the response cannot be
+// used to find out whether a server UUID exists.
+const NOT_FOUND_MESSAGE = "MCP server not found";
+const accessMessage = (_access: Exclude<ServerAccess, "ok">) =>
+  NOT_FOUND_MESSAGE;
 
 export const toolsImplementations = {
   getByMcpServerUuid: async (
@@ -159,14 +167,15 @@ export const syncDiscoveredTools = async (
     );
 
     if (hasChanged) {
-      // Update cache
-      toolsSyncCache.update(input.mcpServerUuid, toolNames);
-
       // Perform sync with cleanup
       const { upserted, deleted } = await toolsRepository.syncTools({
         tools: input.tools,
         mcpServerUuid: input.mcpServerUuid,
       });
+
+      // Only remember the new tool list once it is stored: if the write fails,
+      // the next sync must not be skipped as "unchanged"
+      toolsSyncCache.update(input.mcpServerUuid, toolNames);
 
       const message =
         deleted.length > 0

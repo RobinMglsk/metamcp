@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   bulkUpsert: vi.fn(),
   syncTools: vi.fn(),
   canMutate: vi.fn(),
+  cacheUpdate: vi.fn(),
 }));
 
 vi.mock("../db/repositories", () => ({
@@ -18,13 +19,16 @@ vi.mock("../db/repositories", () => ({
 }));
 vi.mock("../lib/authz", () => ({ canMutate: mocks.canMutate }));
 vi.mock("../lib/metamcp/tools-sync-cache", () => ({
-  toolsSyncCache: { hasChanged: () => true, update: vi.fn() },
+  toolsSyncCache: { hasChanged: () => true, update: mocks.cacheUpdate },
 }));
 vi.mock("@/utils/logger", () => ({
   default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
-import { toolsImplementations as impl } from "./tools.impl";
+import {
+  syncDiscoveredTools,
+  toolsImplementations as impl,
+} from "./tools.impl";
 
 const SERVER = "11111111-1111-4111-8111-111111111111";
 const tools = [
@@ -39,10 +43,19 @@ beforeEach(() => {
 });
 
 describe("tools access control", () => {
-  it("reads: denies another user's private server", async () => {
+  it("reads: denies another user's private server with the same answer as an unknown one", async () => {
     mocks.findByUuid.mockResolvedValue({ uuid: SERVER, user_id: "owner" });
     const r = await impl.getByMcpServerUuid({ mcpServerUuid: SERVER }, "other");
-    expect(r.success).toBe(false);
+    expect(r).toMatchObject({
+      success: false,
+      message: "MCP server not found",
+    });
+    mocks.findByUuid.mockResolvedValue(undefined);
+    const unknown = await impl.getByMcpServerUuid(
+      { mcpServerUuid: SERVER },
+      "other",
+    );
+    expect(unknown).toEqual(r);
     expect(mocks.findByMcpServerUuid).not.toHaveBeenCalled();
   });
 
@@ -82,4 +95,19 @@ describe("tools access control", () => {
       expect(ok.success).toBe(true);
     },
   );
+});
+
+describe("syncDiscoveredTools", () => {
+  it("does not remember the tool list when the database write fails", async () => {
+    mocks.syncTools.mockRejectedValueOnce(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await syncDiscoveredTools({ mcpServerUuid: SERVER, tools });
+    expect(r.success).toBe(false);
+    expect(mocks.cacheUpdate).not.toHaveBeenCalled();
+  });
+
+  it("remembers it after a successful write", async () => {
+    await syncDiscoveredTools({ mcpServerUuid: SERVER, tools });
+    expect(mocks.cacheUpdate).toHaveBeenCalledWith(SERVER, ["t"]);
+  });
 });
