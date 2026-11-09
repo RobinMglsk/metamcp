@@ -49,8 +49,8 @@ Returns `204`, also when the session has no live key.
 ## Using the key
 
 Send it like any API key (`X-API-Key` or `Authorization: Bearer`). The endpoint must have API key
-authentication enabled. An expired or revoked key gets a `401`. Tool calls in the request log carry
-the kcw session id.
+authentication enabled. An expired or revoked key gets a `401`. Each tool call is recorded in the
+audit log (`mcp_request_audit_logs.kcw_session_id`) with the kcw session id.
 
 Keys are removed 24 hours after they expire or are revoked. They do not appear in the API keys list
 of the UI, and their names (`kcw-session-...`) are reserved.
