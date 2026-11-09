@@ -8,10 +8,16 @@ export const API_KEY_PREFIX_LENGTH = 12;
  * salt or stretching needed) and keeps lookups indexable. Only the hash is
  * stored; the key itself is shown once, when it is created.
  */
-export function hashApiKey(key: string): string {
-  return createHash("sha256").update(key, "utf8").digest("hex");
+export function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+export function hashApiKey(key: string): string {
+  return sha256Hex(key);
+}
+
+// By code point (not UTF-16 unit) so a prefix never splits a surrogate pair and
+// matches what the migration's SQL left(key, 12) stores in a UTF-8 database.
 export function apiKeyPrefix(key: string): string {
-  return key.slice(0, API_KEY_PREFIX_LENGTH);
+  return Array.from(key).slice(0, API_KEY_PREFIX_LENGTH).join("");
 }

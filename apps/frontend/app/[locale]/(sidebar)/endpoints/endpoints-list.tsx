@@ -77,8 +77,6 @@ export function EndpointsList({ onRefresh }: EndpointsListProps) {
     error,
   } = trpc.frontend.endpoints.list.useQuery();
 
-  // Fetch user's API keys to use in URLs
-
   // Delete mutation
   const deleteEndpointMutation = trpc.frontend.endpoints.delete.useMutation({
     onSuccess: (data) => {

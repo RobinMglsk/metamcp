@@ -13,7 +13,7 @@ import {
   namespacesTable,
   usersTable,
 } from "../db/schema";
-import { apiKeyPrefix, hashApiKey } from "./api-key-hash";
+import { apiKeyPrefix, hashApiKey, sha256Hex } from "./api-key-hash";
 
 /**
  * Environment-based bootstrap for MetaMCP.
@@ -31,6 +31,7 @@ type ApiKeyConfig = {
   is_public?: boolean;
   user_email?: string; // Email of user who owns this key (for private keys)
   owner?: string; // Alias for user_email
+  key?: string; // Optional key value (>= 32 chars); only its hash is stored and it is never logged
 };
 
 type NamespaceConfig = {
@@ -100,12 +101,10 @@ function nonEmpty(value: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
+const MIN_BOOTSTRAP_KEY_LENGTH = 32;
+
 function generateApiKey(): string {
   return `sk_mt_${crypto.randomBytes(32).toString("hex")}`; // 64 hex chars
-}
-
-function sha256Hex(input: string): string {
-  return crypto.createHash("sha256").update(input, "utf8").digest("hex");
 }
 
 function parseJsonArray<T>(envVar: string | undefined, defaultValue: T[]): T[] {
@@ -604,7 +603,27 @@ async function bootstrapApiKeys(
       });
 
       if (!existing) {
-        const key = generateApiKey();
+        // The key can be supplied by the operator (never logged), or is generated
+        // and printed once; only its hash is stored either way.
+        const supplied = nonEmpty(apiKeyConfig.key);
+        if (
+          supplied !== undefined &&
+          supplied.length < MIN_BOOTSTRAP_KEY_LENGTH
+        ) {
+          console.warn(
+            `⚠️ Skipping API key "${name}": the supplied "key" must be at least ${MIN_BOOTSTRAP_KEY_LENGTH} characters`,
+          );
+          continue;
+        }
+        const printGenerated =
+          process.env.BOOTSTRAP_LOG_GENERATED_API_KEYS !== "false";
+        if (supplied === undefined && !printGenerated) {
+          console.warn(
+            `⚠️ Skipping API key "${name}": it has no "key" and BOOTSTRAP_LOG_GENERATED_API_KEYS=false, so a generated key could never be retrieved`,
+          );
+          continue;
+        }
+        const key = supplied ?? generateApiKey();
         await db.insert(apiKeysTable).values({
           name,
           key: hashApiKey(key),
@@ -616,12 +635,18 @@ async function bootstrapApiKeys(
         const ownerInfo = userId
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`
           : "(public)";
-        console.log(
-          `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${key}`,
-        );
-        console.log(
-          "  ↳ Only a hash of this key is stored: copy it now, it cannot be shown again.",
-        );
+        if (supplied !== undefined) {
+          console.log(
+            `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo} from the supplied key (${apiKeyPrefix(key)}…)`,
+          );
+        } else {
+          console.log(
+            `✓ Created ${isPublic ? "public" : "private"} API key "${name}" ${ownerInfo}: ${key}`,
+          );
+          console.log(
+            '  ↳ Only a hash of this key is stored: copy it now, it cannot be shown again. Treat this log line as a secret, or supply the key yourself with "key" in BOOTSTRAP_API_KEYS.',
+          );
+        }
       } else {
         const ownerInfo = userId
           ? `for user ${ownerEmail ?? Array.from(userMap.keys())[0]}`

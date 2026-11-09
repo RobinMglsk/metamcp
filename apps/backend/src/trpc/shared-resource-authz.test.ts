@@ -27,6 +27,7 @@ vi.mock("../db/repositories", () => ({
   oauthSessionsRepository: {},
   ApiKeysRepository: class {
     update = mocks.keys.update;
+    deleteByName = vi.fn().mockResolvedValue(undefined);
     delete = mocks.keys.delete;
     findAccessibleToUser = mocks.keys.findAccessibleToUser;
   },

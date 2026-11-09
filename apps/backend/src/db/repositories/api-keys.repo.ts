@@ -11,8 +11,10 @@ const nanoid = customAlphabet(
   64,
 );
 
-// Listings never return the key: only its clear prefix followed by an ellipsis.
-const displayKey = sql<string>`concat(${apiKeysTable.key_prefix}, '…')`;
+// Listings never return the key or its hash: only the clear prefix followed by
+// an ellipsis (empty for rows without a prefix). The field keeps the name `key`
+// for API compatibility with existing clients; it is a display value only.
+const displayKey = sql<string>`CASE WHEN ${apiKeysTable.key_prefix} = '' THEN '' ELSE concat(${apiKeysTable.key_prefix}, '…') END`;
 
 export class ApiKeysRepository {
   /**
@@ -58,20 +60,6 @@ export class ApiKeysRepository {
       ...createdApiKey,
       key, // The plaintext key is only ever returned here, at creation
     };
-  }
-
-  async findByUserId(userId: string) {
-    return await db
-      .select({
-        uuid: apiKeysTable.uuid,
-        name: apiKeysTable.name,
-        key: displayKey,
-        created_at: apiKeysTable.created_at,
-        is_active: apiKeysTable.is_active,
-      })
-      .from(apiKeysTable)
-      .where(eq(apiKeysTable.user_id, userId))
-      .orderBy(desc(apiKeysTable.created_at));
   }
 
   // Find all API keys (both public and user-owned)
@@ -176,14 +164,31 @@ export class ApiKeysRepository {
     user_id?: string | null;
     key_uuid?: string;
   }> {
-    const [apiKey] = await db
-      .select({
-        uuid: apiKeysTable.uuid,
-        user_id: apiKeysTable.user_id,
-        is_active: apiKeysTable.is_active,
-      })
+    const columns = {
+      uuid: apiKeysTable.uuid,
+      user_id: apiKeysTable.user_id,
+      is_active: apiKeysTable.is_active,
+    };
+    let [apiKey] = await db
+      .select(columns)
       .from(apiKeysTable)
       .where(eq(apiKeysTable.key, hashApiKey(key)));
+
+    if (!apiKey) {
+      // A key inserted in plaintext by an older instance that was still running
+      // while this version was deployed (such rows have no prefix): accept it
+      // once and convert it to the hashed form.
+      [apiKey] = await db
+        .select(columns)
+        .from(apiKeysTable)
+        .where(and(eq(apiKeysTable.key, key), eq(apiKeysTable.key_prefix, "")));
+      if (apiKey) {
+        await db
+          .update(apiKeysTable)
+          .set({ key: hashApiKey(key), key_prefix: apiKeyPrefix(key) })
+          .where(eq(apiKeysTable.uuid, apiKey.uuid));
+      }
+    }
 
     if (!apiKey) {
       return { valid: false };
@@ -260,5 +265,13 @@ export class ApiKeysRepository {
     }
 
     return deletedApiKey;
+  }
+
+  /**
+   * Removes a key by its exact name (used for keys generated on behalf of a
+   * resource, e.g. an endpoint's auto-generated MCP server).
+   */
+  async deleteByName(name: string): Promise<void> {
+    await db.delete(apiKeysTable).where(eq(apiKeysTable.name, name));
   }
 }

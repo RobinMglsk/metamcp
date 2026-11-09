@@ -32,4 +32,11 @@ describe("api key hashing", () => {
     );
     expect(apiKeyPrefix("sk_mt_ABCDEFGH").length).toBe(API_KEY_PREFIX_LENGTH);
   });
+
+  it("takes the prefix by code point, never splitting a surrogate pair", () => {
+    const key = "😀😀😀😀😀😀😀😀😀😀😀😀😀😀";
+    expect(Array.from(apiKeyPrefix(key))).toHaveLength(API_KEY_PREFIX_LENGTH);
+    expect(apiKeyPrefix(key)).toBe("😀".repeat(API_KEY_PREFIX_LENGTH));
+    expect(() => encodeURIComponent(apiKeyPrefix(key))).not.toThrow();
+  });
 });

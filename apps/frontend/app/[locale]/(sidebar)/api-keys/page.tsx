@@ -148,7 +148,12 @@ export default function ApiKeysPage() {
               {t("api-keys:createApiKey")}
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent
+            // The new key is shown only once: no dismissing by a stray click
+            onInteractOutside={(e) => {
+              if (newApiKey) e.preventDefault();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>{t("api-keys:createApiKey")}</DialogTitle>
               <DialogDescription>
@@ -160,6 +165,12 @@ export default function ApiKeysPage() {
                 <div className="p-4 bg-muted rounded-lg">
                   <p className="text-sm font-medium mb-2">
                     {t("api-keys:newApiKey")}
+                  </p>
+                  <p
+                    role="alert"
+                    className="text-sm text-amber-700 dark:text-amber-400 mb-2"
+                  >
+                    {t("api-keys:newApiKeyWarning")}
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 p-2 bg-background rounded border text-sm font-mono break-all">
