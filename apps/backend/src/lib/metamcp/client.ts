@@ -11,6 +11,7 @@ import { oauthSessionsRepository } from "../../db/repositories";
 import { tryRefreshUpstreamTokens } from "../oauth-upstream/refresh-on-401";
 import { recoverFromPostAuthRace } from "../oauth-upstream/retry-post-auth";
 import { isUpstreamUnauthorizedError } from "../oauth-upstream/token-exchange";
+import { createGuardedFetch } from "../ssrf-guard";
 import { ProcessManagedStdioTransport } from "../stdio-transport/process-managed-transport";
 import { metamcpLogStore } from "./log-store";
 import { serverErrorTracker } from "./server-error-tracker";
@@ -28,6 +29,11 @@ export interface ConnectedClient {
 /**
  * Transforms localhost URLs to use host.docker.internal when running inside Docker
  */
+// Saved servers may legitimately live on internal networks (their URL was
+// validated against the owner's policy when it was saved), so only link-local
+// and cloud-metadata addresses are refused here, including via redirects.
+const upstreamFetch = createGuardedFetch({ allowPrivate: true });
+
 export const transformDockerUrl = (url: string): string => {
   if (process.env.TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL === "true") {
     const transformed = url.replace(
@@ -100,15 +106,19 @@ export const createMetaMcpClient = (
     const hasHeaders = Object.keys(headers).length > 0;
 
     if (!hasHeaders) {
-      transport = new SSEClientTransport(new URL(transformedUrl));
+      transport = new SSEClientTransport(new URL(transformedUrl), {
+        fetch: upstreamFetch,
+        eventSourceInit: { fetch: upstreamFetch },
+      });
     } else {
       transport = new SSEClientTransport(new URL(transformedUrl), {
         requestInit: {
           headers,
         },
         eventSourceInit: {
-          fetch: (url, init) => fetch(url, { ...init, headers }),
+          fetch: (url, init) => upstreamFetch(url, { ...init, headers }),
         },
+        fetch: upstreamFetch,
       });
     }
   } else if (serverParams.type === "STREAMABLE_HTTP" && serverParams.url) {
@@ -130,12 +140,15 @@ export const createMetaMcpClient = (
     const hasHeaders = Object.keys(headers).length > 0;
 
     if (!hasHeaders) {
-      transport = new StreamableHTTPClientTransport(new URL(transformedUrl));
+      transport = new StreamableHTTPClientTransport(new URL(transformedUrl), {
+        fetch: upstreamFetch,
+      });
     } else {
       transport = new StreamableHTTPClientTransport(new URL(transformedUrl), {
         requestInit: {
           headers,
         },
+        fetch: upstreamFetch,
       });
     }
   } else {

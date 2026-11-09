@@ -12,6 +12,14 @@
 // from discovery against the protected resource).
 
 import logger from "../../utils/logger";
+import { createGuardedFetch } from "../ssrf-guard";
+
+// Discovery documents are controlled by the upstream server, so the endpoints
+// they point at are untrusted: refuse link-local / cloud-metadata targets
+// (also via redirects) for discovery and the token POST.
+const upstreamOAuthFetch = createGuardedFetch({
+  allowPrivate: true,
+}) as unknown as typeof fetch;
 
 export type TokenEndpointAuthMethod =
   "none" | "client_secret_basic" | "client_secret_post";
@@ -101,7 +109,7 @@ async function postFormToToken({
     params.set("client_id", clientId);
   }
 
-  const doFetch = fetchImpl ?? fetch;
+  const doFetch = fetchImpl ?? upstreamOAuthFetch;
   const response = await doFetch(tokenEndpoint, {
     method: "POST",
     headers,
@@ -234,7 +242,7 @@ export interface OAuthAuthorizationServerMetadata {
 // misconfigured provider's metadata would mask real upstream bugs.
 export async function discoverAuthorizationServerMetadata(
   serverUrl: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = upstreamOAuthFetch,
 ): Promise<OAuthAuthorizationServerMetadata | null> {
   let wellKnownUrl: URL;
   try {

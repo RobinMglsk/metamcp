@@ -6,11 +6,15 @@ const mocks = vi.hoisted(() => ({
   bulkCreate: vi.fn(),
   findByUuid: vi.fn(),
   update: vi.fn(),
+  checkMcpServerUrl: vi.fn(),
 }));
 
 vi.mock("../lib/authz", () => ({
   isAdmin: mocks.isAdmin,
   STDIO_ADMIN_ONLY_MESSAGE: "stdio admin only",
+}));
+vi.mock("../lib/server-url-policy", () => ({
+  checkMcpServerUrl: mocks.checkMcpServerUrl,
 }));
 vi.mock("../db/repositories", () => ({
   mcpServersRepository: {
@@ -56,6 +60,7 @@ const sseInput = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.checkMcpServerUrl.mockResolvedValue(null);
   mocks.create.mockResolvedValue({
     uuid: "u1",
     name: "n",
@@ -117,5 +122,44 @@ describe("STDIO servers are admin-only", () => {
     );
     expect(res).toMatchObject({ success: false, message: "stdio admin only" });
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("server URL policy", () => {
+  it("create: rejects a URL the outbound policy refuses", async () => {
+    mocks.isAdmin.mockResolvedValue(false);
+    mocks.checkMcpServerUrl.mockResolvedValue("Invalid server URL: private");
+    const res = await impl.create(
+      { name: "x", type: "SSE", url: "http://10.0.0.1/sse" } as never,
+      "user-1",
+    );
+    expect(res).toMatchObject({
+      success: false,
+      message: "Invalid server URL: private",
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.checkMcpServerUrl).toHaveBeenCalledWith(
+      "http://10.0.0.1/sse",
+      "user-1",
+    );
+  });
+
+  it("bulkImport: reports a refused URL per entry and skips it", async () => {
+    mocks.isAdmin.mockResolvedValue(false);
+    mocks.checkMcpServerUrl.mockImplementation(async (url: string) =>
+      url.includes("169.254") ? "Invalid server URL: metadata" : null,
+    );
+    const res = await impl.bulkImport(
+      {
+        mcpServers: {
+          bad: { type: "SSE", url: "http://169.254.169.254/" },
+          good: { type: "SSE", url: "https://x.example/sse" },
+        },
+      } as never,
+      "user-1",
+    );
+    const inserted = mocks.bulkCreate.mock.calls[0][0];
+    expect(inserted.map((s: { name: string }) => s.name)).toEqual(["good"]);
+    expect(JSON.stringify(res)).toContain("metadata");
   });
 });

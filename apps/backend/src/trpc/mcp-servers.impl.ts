@@ -26,6 +26,7 @@ import { clearOverrideCache } from "../lib/metamcp/metamcp-middleware/tool-overr
 import { metaMcpServerPool } from "../lib/metamcp/metamcp-server-pool";
 import { serverErrorTracker } from "../lib/metamcp/server-error-tracker";
 import { convertDbServerToParams } from "../lib/metamcp/utils";
+import { checkMcpServerUrl } from "../lib/server-url-policy";
 import { persistPreRegisteredOAuthClient } from "./pre-registered-oauth";
 
 export const mcpServersImplementations = {
@@ -39,6 +40,11 @@ export const mcpServersImplementations = {
         !(await isAdmin(userId))
       ) {
         return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
+      }
+
+      const urlError = await checkMcpServerUrl(input.url, userId);
+      if (urlError) {
+        return { success: false as const, message: urlError };
       }
 
       // Determine user ownership based on input.user_id or default to current user
@@ -167,6 +173,11 @@ export const mcpServersImplementations = {
             !callerIsAdmin
           ) {
             throw new Error(STDIO_ADMIN_ONLY_MESSAGE);
+          }
+
+          const urlError = await checkMcpServerUrl(serverConfig.url, userId);
+          if (urlError) {
+            throw new Error(urlError);
           }
 
           // Provide default type if not specified
@@ -413,6 +424,11 @@ export const mcpServersImplementations = {
         !(await isAdmin(userId))
       ) {
         return { success: false as const, message: STDIO_ADMIN_ONLY_MESSAGE };
+      }
+
+      const urlError = await checkMcpServerUrl(input.url, userId);
+      if (urlError) {
+        return { success: false as const, message: urlError };
       }
 
       // Determine user ownership based on input.user_id or keep existing ownership

@@ -55,3 +55,40 @@ export function isPrivateOrLocalHost(hostname: string): boolean {
   if (version === 6) return isPrivateV6(host);
   return false;
 }
+
+function isLinkLocalOrMetadataV4(ip: string): boolean {
+  const [a, b] = ip.split(".").map(Number);
+  return (
+    (a === 169 && b === 254) || // link-local, incl. 169.254.169.254 (AWS/GCP/Azure/...)
+    ip === "100.100.100.200" || // Alibaba Cloud metadata
+    ip === "168.63.129.16" // Azure wire server
+  );
+}
+
+/**
+ * Addresses that should never be contacted from the server, whatever the
+ * deployment: link-local (cloud instance metadata) and well known metadata
+ * IPs, for IPv4, IPv6 and IPv4-mapped IPv6.
+ */
+export function isLinkLocalOrMetadataAddress(address: string): boolean {
+  const ip = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const version = isIP(ip);
+  if (version === 4) return isLinkLocalOrMetadataV4(ip);
+  if (version !== 6) return false;
+
+  const dotted = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) return isLinkLocalOrMetadataV4(dotted[1]);
+  const hex = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hex) {
+    const hi = parseInt(hex[1], 16);
+    const lo = parseInt(hex[2], 16);
+    return isLinkLocalOrMetadataV4(
+      `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`,
+    );
+  }
+  const first = parseInt(ip.split(":")[0] || "0", 16);
+  return (
+    (first & 0xffc0) === 0xfe80 || // fe80::/10
+    ip === "fd00:ec2::254" // AWS IPv6 instance metadata
+  );
+}

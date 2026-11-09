@@ -17,11 +17,20 @@ import { findActualExecutable } from "spawn-rx";
 import logger from "@/utils/logger";
 
 import { mcpServersRepository } from "../../db/repositories";
-import { isAdmin, STDIO_ADMIN_ONLY_MESSAGE } from "../../lib/authz";
+import {
+  isAdmin,
+  outboundPolicyForUser,
+  STDIO_ADMIN_ONLY_MESSAGE,
+} from "../../lib/authz";
 import mcpProxy from "../../lib/mcp-proxy";
 import { transformDockerUrl } from "../../lib/metamcp/client";
 import { mcpServerPool } from "../../lib/metamcp/mcp-server-pool";
 import { resolveEnvVariables } from "../../lib/metamcp/utils";
+import {
+  assertOutboundUrlAllowed,
+  createGuardedFetch,
+  OutboundUrlError,
+} from "../../lib/ssrf-guard";
 import { ProcessManagedStdioTransport } from "../../lib/stdio-transport/process-managed-transport";
 import { betterAuthMcpMiddleware } from "../../middleware/better-auth-mcp.middleware";
 
@@ -220,6 +229,40 @@ const requireAdminForStdio = async (
 };
 serverRouter.use(requireAdminForStdio);
 
+// The proxy fetches whatever URL the caller supplies: refuse targets the
+// caller's outbound policy does not allow (metadata/link-local for everyone,
+// private networks for non-admins).
+const requireAllowedTargetUrl = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const type = req.query.transportType;
+  if (
+    (type !== McpServerTypeEnum.enum.SSE &&
+      type !== McpServerTypeEnum.enum.STREAMABLE_HTTP) ||
+    typeof req.query.url !== "string"
+  ) {
+    return next();
+  }
+  try {
+    const policy = await outboundPolicyForUser(
+      (req as express.Request & { user?: { id?: string } }).user?.id,
+    );
+    await assertOutboundUrlAllowed(transformDockerUrl(req.query.url), policy);
+    next();
+  } catch (error) {
+    if (error instanceof OutboundUrlError) {
+      return res
+        .status(403)
+        .json({ error: "Forbidden", message: error.message });
+    }
+    logger.error("Error validating proxy target URL:", error);
+    return res.status(500).json({ error: "Authorization check failed" });
+  }
+};
+serverRouter.use(requireAllowedTargetUrl);
+
 const webAppTransports: Map<string, Transport> = new Map<string, Transport>(); // Web app transports by web app sessionId
 const serverTransports: Map<string, Transport> = new Map<string, Transport>(); // Server Transports by web app sessionId
 
@@ -347,13 +390,19 @@ const createTransport = async (req: express.Request): Promise<Transport> => {
       `SSE transport: url=${url}, headers=${JSON.stringify(headers)}`,
     );
 
+    const guardedFetch = createGuardedFetch(
+      await outboundPolicyForUser(
+        (req as express.Request & { user?: { id?: string } }).user?.id,
+      ),
+    );
     const transport = new SSEClientTransport(new URL(url), {
       eventSourceInit: {
-        fetch: (url, init) => fetch(url, { ...init, headers }),
+        fetch: (url, init) => guardedFetch(url, { ...init, headers }),
       },
       requestInit: {
         headers,
       },
+      fetch: guardedFetch,
     });
     await transport.start();
     return transport;
@@ -384,6 +433,11 @@ const createTransport = async (req: express.Request): Promise<Transport> => {
       requestInit: {
         headers,
       },
+      fetch: createGuardedFetch(
+        await outboundPolicyForUser(
+          (req as express.Request & { user?: { id?: string } }).user?.id,
+        ),
+      ),
     });
     await transport.start();
     return transport;
