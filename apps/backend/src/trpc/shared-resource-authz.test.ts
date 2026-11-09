@@ -243,4 +243,19 @@ describe("shared (user_id = null) resources are admin-only to modify", () => {
     const asAdmin = await apiKeysImplementations.list(as("admin"));
     expect(asAdmin.apiKeys.find((k) => k.name === "shared")?.key).toBe(key);
   });
+
+  it("api keys: names reserved for system keys cannot be created or renamed to", async () => {
+    const name =
+      "Auto-generated for endpoint 11111111-1111-4111-8111-111111111111";
+    await expect(
+      apiKeysImplementations.create({ name } as never, as("user-1")),
+    ).rejects.toThrow(/reserved/);
+    await expect(
+      apiKeysImplementations.update(
+        { uuid: UUID, name: name.toUpperCase() } as never,
+        as("user-1"),
+      ),
+    ).rejects.toThrow(/reserved/);
+    expect(mocks.keys.update).not.toHaveBeenCalled();
+  });
 });

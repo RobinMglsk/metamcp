@@ -268,8 +268,9 @@ export class ApiKeysRepository {
   }
 
   /**
-   * Removes a key by its exact name (used for keys generated on behalf of a
-   * resource, e.g. an endpoint's auto-generated MCP server).
+   * Removes a key by its exact name. Only for system-generated keys: their
+   * names (see lib/reserved-key-names) cannot be created or renamed to by
+   * users, so no user's key can share the name.
    */
   async deleteByName(name: string): Promise<void> {
     await db.delete(apiKeysTable).where(eq(apiKeysTable.name, name));

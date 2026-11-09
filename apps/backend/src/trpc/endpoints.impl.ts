@@ -19,11 +19,9 @@ import {
 } from "../db/repositories";
 import { EndpointsSerializer } from "../db/serializers";
 import { canMutate, denyMessage } from "../lib/authz";
+import { autoKeyName } from "../lib/reserved-key-names";
 
 const apiKeysRepository = new ApiKeysRepository();
-
-const autoKeyName = (endpointUuid: string) =>
-  `Auto-generated for endpoint ${endpointUuid}`;
 
 export const endpointsImplementations = {
   create: async (
