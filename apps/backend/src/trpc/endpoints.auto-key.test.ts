@@ -28,6 +28,14 @@ vi.mock("../db/repositories", () => ({
 vi.mock("../lib/authz", () => ({
   canMutate: async (owner: string | null, user: string) => owner === user,
   denyMessage: (_o: unknown, fallback: string) => fallback,
+  OWNER_ADMIN_ONLY_MESSAGE: "owner admin only",
+  resolveOwner: async (
+    requested: string | null | undefined,
+    fallback: string | null,
+  ) => ({
+    ok: true,
+    ownerId: requested === undefined ? fallback : requested,
+  }),
 }));
 vi.mock("@/utils/logger", () => ({
   default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
