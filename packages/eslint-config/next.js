@@ -13,6 +13,8 @@ import { config as baseConfig } from "./base.js";
  * @type {import("eslint").Linter.Config[]}
  * */
 export const nextJsConfig = [
+  // `next lint` skipped build output implicitly; the plain ESLint CLI does not.
+  { ignores: [".next/**", "out/**", "next-env.d.ts"] },
   ...baseConfig,
   js.configs.recommended,
   eslintConfigPrettier,
@@ -49,7 +51,11 @@ export const nextJsConfig = [
     },
     settings: { react: { version: "detect" } },
     rules: {
-      ...pluginReactHooks.configs.recommended.rules,
+      // eslint-plugin-react-hooks 7 added the React Compiler rules (set-state-in-effect,
+      // immutability, purity, ...) to `recommended`. Keep the pre-v7 rule set until
+      // the existing violations are addressed.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       // React scope no longer necessary with new JSX transform.
       "react/react-in-jsx-scope": "off",
     },
