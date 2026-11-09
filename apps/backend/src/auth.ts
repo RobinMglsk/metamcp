@@ -36,8 +36,13 @@ const oidcProviders: GenericOAuthConfig[] = [];
 
 // Add OIDC provider if configured
 if (process.env.OIDC_CLIENT_ID && process.env.OIDC_CLIENT_SECRET) {
+  const providerId = process.env.OIDC_PROVIDER_ID || "oidc";
   const oidcConfig: GenericOAuthConfig = {
-    providerId: process.env.OIDC_PROVIDER_ID || "oidc",
+    providerId,
+    // better-auth >=1.7 serves generic OAuth callbacks at /api/auth/callback/:id.
+    // Keep advertising the pre-1.7 URI so redirect URIs already registered at
+    // identity providers keep working; src/index.ts maps it to the new route.
+    redirectURI: `${BETTER_AUTH_URL}/api/auth/oauth2/callback/${providerId}`,
     clientId: process.env.OIDC_CLIENT_ID,
     clientSecret: process.env.OIDC_CLIENT_SECRET,
     scopes: (process.env.OIDC_SCOPES || "openid email profile").split(" "),

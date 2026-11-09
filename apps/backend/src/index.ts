@@ -29,6 +29,12 @@ app.use(async (req, res, next) => {
     try {
       // Create a web Request object from Express request
       const url = new URL(req.url, `http://${req.headers.host}`);
+      // Legacy generic-OAuth callback path (better-auth <1.7), still registered
+      // as redirect URI at identity providers; see redirectURI in auth.ts.
+      url.pathname = url.pathname.replace(
+        /^\/api\/auth\/oauth2\/callback\//,
+        "/api/auth/callback/",
+      );
       const headers = new Headers();
 
       // Copy headers from Express request
