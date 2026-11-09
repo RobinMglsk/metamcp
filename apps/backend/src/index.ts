@@ -63,6 +63,13 @@ app.use(async (req, res, next) => {
         }
       });
 
+      // Better Auth derives the client IP (rate limiting, session metadata)
+      // from X-Forwarded-For and would take the left-most, client-controlled
+      // entry. Replace it with the address Express resolved from its trusted
+      // proxies so the header cannot be used to dodge per-IP limits.
+      headers.set("x-forwarded-for", req.ip ?? req.socket.remoteAddress ?? "");
+      if (!headers.get("x-forwarded-for")) headers.delete("x-forwarded-for");
+
       // Create Request object
       const request = new Request(url.toString(), {
         method: req.method,
