@@ -60,6 +60,16 @@ describe("checkStartupConfig", () => {
     expect(r.warnings).toHaveLength(1);
   });
 
+  it("flags a placeholder KCW_SERVICE_TOKEN, and accepts a generated one", () => {
+    const bad = checkStartupConfig({ ...prod, KCW_SERVICE_TOKEN: "change-me" });
+    expect(bad.errors).toHaveLength(1);
+    expect(bad.errors[0]).toContain("KCW_SERVICE_TOKEN");
+    expect(
+      checkStartupConfig({ ...prod, KCW_SERVICE_TOKEN: GOOD_SECRET }).errors,
+    ).toEqual([]);
+    expect(checkStartupConfig(prod).errors).toEqual([]);
+  });
+
   it("is clean for a proper production config", () => {
     expect(
       checkStartupConfig({

@@ -68,7 +68,8 @@
               "en/integrations/claude-desktop",
               "en/integrations/open-web-ui",
               "en/integrations/general-stdio-with-api-key",
-              "en/integrations/general-stdio-with-oauth"
+              "en/integrations/general-stdio-with-oauth",
+              "en/integrations/kcw-session-keys"
             ]
           },
           {

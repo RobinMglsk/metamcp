@@ -110,6 +110,13 @@ export function checkStartupConfig(
     );
   }
 
+  const kcwToken = env.KCW_SERVICE_TOKEN;
+  if (kcwToken && isPlaceholderSecret(kcwToken)) {
+    problem(
+      "KCW_SERVICE_TOKEN is a placeholder or shorter than 32 characters; anyone who knows it can mint API keys. Generate one with: openssl rand -base64 32",
+    );
+  }
+
   if (bootstrapPasswords(env).some(isWeakPassword)) {
     problem(
       "A BOOTSTRAP_USER_PASSWORD / BOOTSTRAP_USERS password is a well-known default or too short (the account would be created with it). Set a strong password.",

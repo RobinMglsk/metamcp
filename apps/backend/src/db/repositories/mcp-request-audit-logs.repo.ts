@@ -16,6 +16,7 @@ export interface McpRequestAuditLogCreateInput {
   sessionId: string;
   authMethod: "api_key" | "oauth" | "none";
   apiKeyUuid?: string;
+  kcwSessionId?: string;
   apiKeyUserId?: string;
   oauthUserId?: string;
   mcpServerUuid?: string;
@@ -45,6 +46,7 @@ export class McpRequestAuditLogsRepository {
         session_id: input.sessionId,
         auth_method: input.authMethod,
         api_key_uuid: input.apiKeyUuid,
+        kcw_session_id: input.kcwSessionId,
         api_key_user_id: input.apiKeyUserId,
         oauth_user_id: input.oauthUserId,
         mcp_server_uuid: input.mcpServerUuid,

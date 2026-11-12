@@ -117,6 +117,11 @@ http {
         listen 8081;
         server_name metamcp.dev.local;
 
+        # The kcw key minting routes are for the internal network only
+        location /internal/ {
+            return 404;
+        }
+
         location / {
             proxy_pass http://localhost:12008;  # Your backend/frontend
             proxy_set_header Host $host;

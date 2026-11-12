@@ -29,6 +29,7 @@ function getRequestContext(
     auth: {
       method: req.authMethod || "none",
       apiKeyUuid: req.apiKeyUuid,
+      apiKeySessionId: req.apiKeySessionId,
       apiKeyUserId: req.apiKeyUserId,
       oauthUserId: req.oauthUserId,
     },

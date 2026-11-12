@@ -107,6 +107,28 @@ export const ApiKeyUpdateInputSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
+// kcw session keys (minted by the kcw service, see routers/kcw-keys)
+export const KCW_MAX_KEY_TTL_SECONDS = 3600;
+
+export const KcwSessionIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+export const KcwMintKeyRequestSchema = z.object({
+  session_id: KcwSessionIdSchema,
+  // Clamped to KCW_MAX_KEY_TTL_SECONDS, never rejected
+  ttl_seconds: z.number().int().positive().optional(),
+  endpoint_names: z.array(z.string().min(1).max(200)).max(100).optional(),
+});
+
+export const KcwMintKeyResponseSchema = z.object({
+  key: z.string(),
+  key_uuid: z.string().uuid(),
+  expires_at: z.string(),
+});
+
 // Type exports
 export type ApiKey = z.infer<typeof ApiKeySchema>;
 export type CreateApiKeyForm = z.infer<typeof CreateApiKeyFormSchema>;
@@ -123,3 +145,5 @@ export type ValidateApiKeyResponse = z.infer<
 >;
 export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInputSchema>;
 export type ApiKeyUpdateInput = z.infer<typeof ApiKeyUpdateInputSchema>;
+export type KcwMintKeyRequest = z.infer<typeof KcwMintKeyRequestSchema>;
+export type KcwMintKeyResponse = z.infer<typeof KcwMintKeyResponseSchema>;

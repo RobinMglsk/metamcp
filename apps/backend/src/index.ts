@@ -1,12 +1,14 @@
 import express from "express";
 
 import { auth } from "./auth";
+import { startKcwKeySweeper } from "./lib/kcw-key-sweeper";
 import { hasValidSession } from "./lib/session-check";
 import { initializeIdleServers, initializeOnStartup } from "./lib/startup";
 import {
   createJsonBodyParser,
   resolveTrpcLimit,
 } from "./middleware/body-limits.middleware";
+import kcwKeysRouter from "./routers/kcw-keys";
 import mcpProxyRouter from "./routers/mcp-proxy";
 import oauthRouter from "./routers/oauth";
 import publicEndpointsRouter from "./routers/public-metamcp";
@@ -119,9 +121,13 @@ app.use("/mcp-proxy", mcpProxyRouter);
 // Mount tRPC routes
 app.use("/trpc", trpcRouter);
 
+// Key minting for the kcw service (needs KCW_SERVICE_TOKEN; keep internal)
+app.use("/internal/kcw", kcwKeysRouter);
+
 async function start(): Promise<void> {
   // Startup initialization (must run after DB is reachable/migrations are applied, and before listening)
   await initializeOnStartup();
+  startKcwKeySweeper();
 
   app.listen(12009, async () => {
     console.log(`Server is running on port 12009`);

@@ -16,6 +16,7 @@ export interface ApiKeyAuthenticatedRequest extends express.Request {
   endpoint: DatabaseEndpoint;
   apiKeyUserId?: string;
   apiKeyUuid?: string;
+  apiKeySessionId?: string; // kcw session the API key was minted for
   oauthUserId?: string; // For OAuth-authenticated requests
   authMethod?: "api_key" | "oauth"; // Track which auth method was used
 }
@@ -197,6 +198,7 @@ export const authenticateApiKey = async (
         // API key valid - perform access control and pass
         authReq.apiKeyUserId = apiKeyResult.user_id || undefined;
         authReq.apiKeyUuid = apiKeyResult.key_uuid;
+        authReq.apiKeySessionId = apiKeyResult.session_id ?? undefined;
         authReq.authMethod = "api_key";
 
         const accessCheckResult = checkApiKeyAccess(apiKeyResult, endpoint);
@@ -267,6 +269,7 @@ export const authenticateApiKey = async (
         // API key valid - perform access control and pass
         authReq.apiKeyUserId = apiKeyResult.user_id || undefined;
         authReq.apiKeyUuid = apiKeyResult.key_uuid;
+        authReq.apiKeySessionId = apiKeyResult.session_id ?? undefined;
         authReq.authMethod = "api_key";
 
         const accessCheckResult = checkApiKeyAccess(apiKeyResult, endpoint);
@@ -369,10 +372,20 @@ export const authenticateApiKey = async (
 /**
  * Check if API key has access to the endpoint
  */
-function checkApiKeyAccess(
-  validation: { user_id?: string | null },
+export function checkApiKeyAccess(
+  validation: { user_id?: string | null; endpoint_names?: string[] | null },
   endpoint: DatabaseEndpoint,
 ): { allowed: boolean; message?: string } {
+  if (
+    validation.endpoint_names &&
+    !validation.endpoint_names.includes(endpoint.name)
+  ) {
+    return {
+      allowed: false,
+      message: "This API key is not valid for this endpoint.",
+    };
+  }
+
   const isPublicApiKey = validation.user_id === null;
   const isPrivateEndpoint = endpoint.user_id !== null;
 

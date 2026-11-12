@@ -1,0 +1,56 @@
+---
+title: "kcw session API keys"
+description: "Give every kcw session its own MetaMCP API key that is valid for at most one hour"
+---
+
+kcw (klootjescode) can mint a MetaMCP API key per session. The key expires after at most one hour
+(a longer request is clamped), can be limited to certain endpoints, and is revoked when the session
+ends. There is no refresh: when a key expires, kcw starts a new session with a new key.
+
+## Setup
+
+Set these on the MetaMCP backend:
+
+| Variable | Meaning |
+| --- | --- |
+| `KCW_SERVICE_TOKEN` | Shared secret (at least 32 characters, `openssl rand -base64 32`). Without it the routes answer 404. |
+| `KCW_KEY_OWNER_USER_ID` | Optional. The user that owns the minted keys. Unset means public keys, which only reach public endpoints. |
+
+The routes live under `/internal/kcw` on the backend (port 12009). They are not proxied by the
+frontend. Keep them on the internal network and do not forward `/internal/` from a reverse proxy.
+
+## Mint a key
+
+```bash
+curl -X POST http://backend:12009/internal/kcw/keys \
+  -H "Authorization: Bearer $KCW_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"abc-123","ttl_seconds":3600,"endpoint_names":["my-endpoint"]}'
+```
+
+- `session_id` (required): 1-128 characters of `A-Z a-z 0-9 _ . -`. Minting again for the same
+  session revokes its previous key.
+- `ttl_seconds` (optional): defaults to and is capped at 3600.
+- `endpoint_names` (optional): the key is only valid for these endpoints. Omit it for every endpoint
+  the owner can reach.
+
+The response (`201`) holds `key`, `key_uuid` and `expires_at`. The key is shown only once, and only
+its hash is stored.
+
+## Revoke a key
+
+```bash
+curl -X DELETE http://backend:12009/internal/kcw/keys/abc-123 \
+  -H "Authorization: Bearer $KCW_SERVICE_TOKEN"
+```
+
+Returns `204`, also when the session has no live key.
+
+## Using the key
+
+Send it like any API key (`X-API-Key` or `Authorization: Bearer`). The endpoint must have API key
+authentication enabled. An expired or revoked key gets a `401`. Each tool call is recorded in the
+audit log (`mcp_request_audit_logs.kcw_session_id`) with the kcw session id.
+
+Keys are removed 24 hours after they expire or are revoked. They do not appear in the API keys list
+of the UI, and their names (`kcw-session-...`) are reserved.

@@ -121,4 +121,19 @@ describe("createAuditCallToolMiddleware", () => {
       }),
     );
   });
+
+  it("records the kcw session of the API key", async () => {
+    const createAuditLog = vi.fn().mockResolvedValue(undefined);
+    const middleware = createAuditCallToolMiddleware({ createAuditLog });
+    const handler = vi.fn().mockResolvedValue({ content: [] });
+
+    await middleware(handler)(baseRequest, {
+      ...baseContext,
+      auth: { method: "api_key", apiKeySessionId: "kcw-1" },
+    });
+
+    expect(createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ kcwSessionId: "kcw-1" }),
+    );
+  });
 });
