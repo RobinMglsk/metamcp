@@ -141,7 +141,7 @@ export default function NamespacesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Package className="h-8 w-8 text-primary" />
           <div>
