@@ -3,6 +3,29 @@ import { isJSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import logger from "@/utils/logger";
 
+/**
+ * Message relayed to the inspector client when sending to the upstream server
+ * fails. Newer SDK versions drop the HTTP status from StreamableHTTPError
+ * messages, but the inspector client only starts its OAuth flow when the error
+ * mentions "401", so the status is appended when it is missing.
+ */
+export function describeUpstreamError(error: {
+  message?: string;
+  code?: unknown;
+}): string {
+  const message = error?.message ?? "Unknown error";
+  const status = error?.code;
+  if (
+    typeof status === "number" &&
+    status >= 400 &&
+    status <= 599 &&
+    !message.includes(String(status))
+  ) {
+    return `${message} (HTTP ${status})`;
+  }
+  return message;
+}
+
 function onClientError(error: Error) {
   // Don't log "Not connected" errors as they're expected when connections close
   if (error?.message && error.message.includes("Not connected")) {
@@ -110,7 +133,7 @@ export default function mcpProxy({
           id: message.id,
           error: {
             code: -32001,
-            message: error.message,
+            message: describeUpstreamError(error),
             data: error,
           },
         };
